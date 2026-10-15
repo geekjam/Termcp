@@ -497,7 +497,7 @@ password = "placeholder2"
 # [connections.jump.jump]         # 更深一跳
 ```
 
-可选字段：`port` / `key_passphrase` / `trust_unknown_host` / `known_hosts` / `dial_timeout_seconds` / `proxy` / `description` / `default_shell` / `default_mode` / `default_approval`。导出（`GET /api/connections/batch`）产生的是同一形状，导出的文件可直接导回；`internal` 是保留名，已存在的名字导入时变为 `name-2` 而不是被覆写。
+可选字段：`port` / `key_passphrase` / `trust_unknown_host` / `known_hosts` / `dial_timeout_seconds` / `proxy` / `description` / `default_shell` / `default_mode` / `default_approval`。导出（`GET /api/connections/batch`）产生的是同一形状，导出的文件可直接导回；只导出持久主机，临时主机即使被明确点名也不会导出。`internal` 是保留名，已存在的名字导入时变为 `name-2` 而不是被覆写。
 
 ---
 

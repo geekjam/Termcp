@@ -761,6 +761,13 @@ function exportSelectedNodes() {
     showCopyToast(t('nethub.batch.exportInternal'));
     return;
   }
+  var hasTemporary = (window._lastConnections || []).some(function (conn) {
+    return conn.temporary && names.indexOf(conn.name) !== -1;
+  });
+  if (hasTemporary) {
+    showCopyToast(t('nethub.batch.exportTemporary'));
+    return;
+  }
   downloadConnectionsToml(names).catch(function (e) {
     showCopyToast(t('conn.batch.exportFailed', { msg: String(e.message || e) }));
   });

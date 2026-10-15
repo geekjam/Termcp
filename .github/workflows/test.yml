@@ -28,6 +28,9 @@ jobs:
           RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
         run: python scripts/release_metadata.py check
 
+      - name: Test release notes export
+        run: python -m unittest discover -s scripts -p "test_*.py"
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"

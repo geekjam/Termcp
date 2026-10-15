@@ -21,12 +21,11 @@ type BatchImportResult struct {
 	Renamed  []BatchRename `json:"renamed,omitempty"`
 }
 
-// ExportBatch returns a TOML document containing remote profiles, including
-// temporary ones. An empty only exports every stored profile; otherwise exactly
-// the named ones are exported — a name that does not resolve is skipped rather
-// than failing the whole file, so a selection captured before a deletion still
-// downloads. The built-in internal profile is intentionally excluded in both
-// modes (the KindRemote filter below is what drops it).
+// ExportBatch returns a TOML document containing persistent remote profiles.
+// Temporary profiles are never exported, even when explicitly named. An empty
+// only exports every persistent profile; otherwise the named persistent profiles
+// are exported. A name that no longer resolves is skipped so a selection captured
+// before a deletion still downloads. The built-in internal profile is excluded.
 func (s *Store) ExportBatch(only []string) ([]byte, error) {
 	names := only
 	if len(names) == 0 {
@@ -36,12 +35,24 @@ func (s *Store) ExportBatch(only []string) ([]byte, error) {
 		}
 		names = list
 	}
+	// Keep the storage-mode check and disk read under the same lock as saves.
+	// ReadRaw is deliberately not used: it also returns temporary credentials.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	profiles := make([]map[string]any, 0, len(names))
 	for _, name := range names {
+		name = strings.TrimSpace(name)
 		if IsInternalName(name) {
 			continue
 		}
-		raw, err := s.ReadRaw(name)
+		if _, temporary := s.temporary[name]; temporary {
+			continue
+		}
+		path, err := s.configPath(name)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := os.ReadFile(path)
 		if err != nil {
 			if len(only) > 0 && os.IsNotExist(err) {
 				continue

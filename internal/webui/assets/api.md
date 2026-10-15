@@ -164,7 +164,8 @@ forgotten. Set it in the connection editor's checkbox or as
 
 `temporary: true` marks a remote profile held only in process memory. It remains
 available to REST, MCP, and the Web UI until termcp exits. It is never written
-under `ssh_configs/`.
+under `ssh_configs/` and is excluded from batch exports, even when explicitly
+named in an export request.
 
 ### `GET /api/connections/{name}`
 
@@ -200,13 +201,15 @@ routes: `reserved_profile` names the built-in `internal` profile, and
 
 ### `GET /api/connections/batch`
 
-Downloads all remote profiles as one TOML file, including temporary profiles.
-The built-in `internal` profile is excluded. The file contains credentials, so
-handle it as a secret.
+Downloads all persistent remote profiles as one TOML file. Temporary profiles
+and the built-in `internal` profile are excluded. The file contains credentials,
+so handle it as a secret.
 
-`?names=a,b` filters the download to exactly those profiles; a name that no
-longer resolves is skipped rather than failing the file. Naming `internal` in
-`names` is refused with `400` — export of the built-in profile does not exist.
+`?names=a,b` filters the download to those persistent profiles; temporary profiles
+and names that no longer resolve are skipped rather than failing the file. A
+selection containing only temporary or missing profiles returns an empty
+`connections` array. Naming `internal` in `names` is refused with `400` — export
+of the built-in profile does not exist.
 
 ### `POST /api/connections/batch?temporary=false`
 

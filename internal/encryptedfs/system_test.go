@@ -24,7 +24,8 @@ func (s *memoryCredentials) load(reference string) (string, error) {
 	return s.values[reference], nil
 }
 
-// No test touches the runner's actual login Keychain or Secret Service.
+// Unit tests use an injected service. Opt-in native coverage lives in
+// system_native_test.go and requires the isolated runner script.
 func TestCredentialProviderRequiresOriginalCredentialService(t *testing.T) {
 	store := &memoryCredentials{values: map[string]string{}}
 	provider := credentialProvider{name: "test-system", store: store}

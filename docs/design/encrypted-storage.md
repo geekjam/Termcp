@@ -1,6 +1,6 @@
 # 本地落盘清单与纯文件加密存储设计
 
-状态：开发分支已接入加密文件、事件日志、密码 API/Web UI、启动门禁及可续迁的历史转换。服务在解锁、迁移和恢复完成前不建立业务图；提交后的存储只读密文。系统托管支持 Windows DPAPI、macOS Keychain 和 Linux Secret Service；本地测试使用替身，不访问开发机密钥服务，Windows/Linux 还需由各平台 CI 和真实部署验证。此文包含原格式盘点及新格式的设计边界，不代表已发布版本。
+状态：开发分支已接入加密文件、事件日志、密码 API/Web UI、启动门禁及可续迁的历史转换。服务在解锁、迁移和恢复完成前不建立业务图；提交后的存储只读密文。系统托管支持 Windows DPAPI、macOS Keychain 和 Linux Secret Service；常规单元测试使用替身，独立三系统 CI 使用隔离真实后端验证跨进程解锁、服务重启及凭据丢失/损坏，见 [测试说明](../agents/testing.md#native-system-key-stores)。平台执行结果仍以对应 CI 和真实部署验证为准。此文包含原格式盘点及新格式的设计边界，不代表已发布版本。
 
 底层格式、接口边界与验证范围见 [`encrypted-file-format.md`](encrypted-file-format.md)。
 

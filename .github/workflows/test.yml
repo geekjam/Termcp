@@ -2,9 +2,10 @@ name: Test
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, encryption-test]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -28,7 +29,7 @@ jobs:
           RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
         run: python scripts/release_metadata.py check
 
-      - name: Test release notes export
+      - name: Test Python helpers
         run: python -m unittest discover -s scripts -p "test_*.py"
 
       - uses: actions/setup-go@v5
@@ -45,3 +46,33 @@ jobs:
         run: |
           go build -tags no_webui ./...
           go test -tags no_webui -count=1 -race -run TestNoWebUIBuildCarriesDocsOnly ./internal/webui/
+
+  system-key-store:
+    name: Native key store (${{ matrix.os }})
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install Secret Service test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y dbus-x11 gnome-keyring libsecret-tools libglib2.0-bin
+
+      - name: Test real system key store
+        run: python scripts/test_native_key_store.py

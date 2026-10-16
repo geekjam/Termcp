@@ -85,6 +85,31 @@ restored copy has none.
 
 ## Before you push
 
+### Native system key stores
+
+The `system-key-store` CI matrix separately runs real Windows DPAPI, macOS
+Keychain and Linux Secret Service tests with `-race`. It checks fresh-process
+decryption, system-mode bootstrap/restart, and rejection of missing, malformed
+or replaced credentials (or a damaged DPAPI blob), without changing the stored
+master-key envelope. An unavailable backend is a failure in this job.
+
+Run it explicitly with `python scripts/test_native_key_store.py`. Ordinary
+`go test ./...` leaves native integration disabled and uses the mock-provider
+unit tests instead. Do not set the native-test environment flags manually.
+
+The script uses a disposable macOS Keychain, temporarily changes the default
+and search list, then restores both and removes the test Keychain even after a
+test failure. Linux requires `dbus-x11`, `gnome-keyring` and `libsecret-tools`;
+the script creates a private D-Bus session and temporary XDG directories, then
+stops its daemon and removes its keyring files. Windows DPAPI blobs live only in
+test temporary directories. Test passwords are generated at runtime, sent to
+credential tools on stdin, and never printed or stored in the repository.
+
+The Test workflow accepts pushes to `encryption-test`, PRs targeting `main` or
+`dev`, and manual dispatches. Adding this coverage does not itself run remote CI.
+
+### Local checks
+
 ```bash
 make test         # the CI command exactly; -race is on wherever the toolchain supports it
 make test-stress  # scheduling perturbation: -cpu=1,2,4 × -count=2 × -shuffle=on

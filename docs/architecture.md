@@ -1,5 +1,7 @@
 # Termcp 终端进程通信流程架构
 
+服务启动先建立加密存储门禁：初始化/解锁 → 旧文件迁移 → 历史恢复 → 构建并发布会话、MCP 和 Web UI 业务图。门禁期间只开放初始化、状态、静态文档及必要管理接口；不会继续向旧文件写业务数据。存储模块及目录见 [加密存储设计](design/encrypted-storage.md)，部署入口见 [解锁与升级](encrypted-storage.md)。
+
 ## 零、HTTP 入口与认证中间件（可选）
 
 启用 `--auth-token` / `--auth-hash` 后，共享 `http.ServeMux` 外层包一层 `internal/auth` 中间件，一次覆盖所有入口（Web UI、REST、MCP SSE、`/stream`、WebSocket）：
@@ -339,15 +341,15 @@ Agent A (reader 0)           Session              Agent B (新加入)
   ▼
 message.Manager.AppendOutput(sessionID, shellID, chunk)
   │
-  ├─ per-session mutex（防止字节写与标记写交错）
+  ├─ per-session writer goroutine（防止字节写与标记写交错）
   │
-  ├─ storage.AppendLog → 返回 offset（= log.bin 的文件位置，偏移的唯一定义）
-  │   data/sessions/{session_id}/{shell_id}/log.bin
+  ├─ storage.AppendLog → 返回逻辑明文输出 offset（不含加密头和非输出事件）
+  │   sessions/{session_id}/{shell_id}/events.enc 内的 Output 记录
   │
   ├─ buffer.WriteAt(chunk, offset)   只断言：自身末尾 == offset，不符则停止记录
   │
   └─ 仅状态变化时：storage.AppendMark
-      data/sessions/{session_id}/{shell_id}/log.jsonl
+      同一 events.enc 内的 Mark 记录（不推进输出 offset）
 ```
 
 ## 十、会话生命周期状态机

@@ -148,7 +148,7 @@ END=$(jq -r .end <<<"$R"); TOTAL=$(jq -r .total <<<"$R")
 `d` is the raw byte window in a standard JSON string, not base64. Byte sequences
 that are not valid UTF-8 cannot survive a JSON string (Windows ConPTY already
 replaces them before Termcp sees them; a Linux `cat` of binary data may show
-U+FFFD) — `log.bin` itself is byte-exact.
+U+FFFD) — `decrypted output stream` itself is byte-exact.
 
 After issuing a command, re-poll until output stops growing — the read blocks
 until bytes arrive, so no delay is needed between polls.

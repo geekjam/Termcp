@@ -110,6 +110,7 @@ type Session struct {
 	onInput        atomic.Pointer[func(shellID string, src InputSource, submit bool)] // invoked when a shell receives input
 	onShellExit    atomic.Pointer[func(shellID string, exitCode *int)]
 	onShellClose   atomic.Pointer[func(shellID string)]
+	onResize       atomic.Pointer[func(shellID string, rows, cols int) error]
 	enterCRLF      bool         // line-ending for pipe-mode enter (\r\n for cmd/powershell, \n for unix)
 	defaultShell   string       // profile default_shell, applied to shells opened later
 	onExit         OnExitPolicy // what to do when the last shell ends by itself

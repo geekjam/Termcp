@@ -28,6 +28,7 @@ type Store struct {
 	mu        sync.Mutex
 	temporary map[string][]byte // process-local profiles; guarded by mu
 	onChange  atomic.Value      // func(), set via SetOnChange, called after Save/Delete/Rename
+	enc       *encryptedProfiles
 }
 
 // SetOnChange registers a callback fired after Save, Delete, or Rename succeeds.
@@ -77,6 +78,16 @@ func (s *Store) configPath(name string) (string, error) {
 // internal/config.toml (see ParseInternalOverride).
 func (s *Store) Load(name string) (*Entry, error) {
 	name = strings.TrimSpace(name)
+	if s.enc != nil {
+		raw, err := s.readEncryptedRaw(name)
+		if err != nil {
+			return nil, err
+		}
+		if IsInternalName(name) {
+			return ParseInternalOverride(raw, InternalEntry())
+		}
+		return ParseAndValidate(raw)
+	}
 	if IsInternalName(name) {
 		base := InternalEntry()
 		data, err := os.ReadFile(s.internalOverridePath())
@@ -123,6 +134,9 @@ func (s *Store) Load(name string) (*Entry, error) {
 // in effect rather than a constant it cannot change.
 func (s *Store) ReadRaw(name string) ([]byte, error) {
 	name = strings.TrimSpace(name)
+	if s.enc != nil {
+		return s.readEncryptedRaw(name)
+	}
 	if IsInternalName(name) {
 		data, err := os.ReadFile(s.internalOverridePath())
 		if err == nil {
@@ -159,6 +173,9 @@ func (s *Store) ReadRaw(name string) ([]byte, error) {
 func (s *Store) List() ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.enc != nil {
+		return s.listEncryptedLocked(), nil
+	}
 	entries, err := os.ReadDir(s.root())
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -199,6 +216,9 @@ func (s *Store) Save(name string, data []byte) error {
 // SaveWithOptions stores a remote profile only in memory when temporary is true.
 // Switching an existing profile between modes removes its previous copy.
 func (s *Store) SaveWithOptions(name string, data []byte, temporary bool) error {
+	if s.enc != nil {
+		return s.saveEncrypted(name, data, temporary)
+	}
 	if IsInternalName(name) {
 		if temporary {
 			return fmt.Errorf("internal profile cannot be temporary")
@@ -266,6 +286,14 @@ func (s *Store) checkNameCollisionLocked(name, exclude string) error {
 		if existing != exclude && strings.EqualFold(existing, name) {
 			return fmt.Errorf("config already exists: %s", existing)
 		}
+	}
+	if s.enc != nil {
+		for existing := range s.enc.doc.Profiles {
+			if existing != exclude && strings.EqualFold(existing, name) {
+				return fmt.Errorf("config already exists: %s", existing)
+			}
+		}
+		return nil
 	}
 	entries, err := os.ReadDir(s.root())
 	if err != nil && !os.IsNotExist(err) {
@@ -335,6 +363,9 @@ func (s *Store) Rename(oldName, newName string) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.enc != nil {
+		return s.renameEncryptedLocked(oldName, newName)
+	}
 	if err := s.checkNameCollisionLocked(newName, oldName); err != nil {
 		return err
 	}
@@ -392,6 +423,9 @@ func (s *Store) Delete(name string) error {
 	dir := filepath.Dir(p)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.enc != nil {
+		return s.deleteEncryptedLocked(name)
+	}
 	delete(s.temporary, name)
 	if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
 		return err

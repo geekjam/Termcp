@@ -206,6 +206,11 @@ func (cs *ChildShell) ResizePty(rows, cols int) error {
 	}
 	cs.Rows = rows
 	cs.Cols = cols
+	if cs.parent != nil {
+		if callback := cs.parent.onResize.Load(); callback != nil {
+			return (*callback)(cs.ID, rows, cols)
+		}
+	}
 	return nil
 }
 

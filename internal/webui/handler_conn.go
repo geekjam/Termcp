@@ -161,6 +161,11 @@ func (h *Handler) handlePutConnection(w http.ResponseWriter, r *http.Request) {
 // The browser uploads and downloads opaque TOML bytes. Parsing and validation
 // belong entirely to the backend so every client uses the same format.
 func (h *Handler) handleExportConnections(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Query().Has("password") || r.URL.Query().Has("confirm_password") {
+		http.Error(w, "passwords must be sent in the POST export body", http.StatusBadRequest)
+		return
+	}
 	if h.SSH == nil {
 		http.Error(w, "ssh store not configured", http.StatusServiceUnavailable)
 		return
@@ -187,6 +192,7 @@ func (h *Handler) handleExportConnections(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	defer clear(data)
 	w.Header().Set("Content-Type", "application/toml; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="termcp-connections.toml"`)
 	w.WriteHeader(http.StatusOK)
@@ -194,6 +200,11 @@ func (h *Handler) handleExportConnections(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handleImportConnections(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Query().Has("password") {
+		http.Error(w, "use the multipart import endpoint for passwords", http.StatusBadRequest)
+		return
+	}
 	if h.SSH == nil {
 		http.Error(w, "ssh store not configured", http.StatusServiceUnavailable)
 		return
@@ -209,8 +220,13 @@ func (h *Handler) handleImportConnections(w http.ResponseWriter, r *http.Request
 	}
 	const maxUpload = 16 << 20
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxUpload+1))
+	defer clear(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if sshconfig.IsEncryptedBatch(body) {
+		http.Error(w, "encrypted files require POST /api/connections/batch/import", http.StatusBadRequest)
 		return
 	}
 	result, err := h.SSH.ImportBatch(body, temporary)

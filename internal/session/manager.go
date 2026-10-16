@@ -133,6 +133,10 @@ func (m *Manager) Create(cfg Config) (*Session, error) {
 	s.onShellExit.Store(&onShellExit)
 	onShellClose := m.notifyClose
 	s.onShellClose.Store(&onShellClose)
+	if m.store != nil {
+		onResize := func(shellID string, rows, cols int) error { return m.store.RecordResize(s.ID, shellID, rows, cols) }
+		s.onResize.Store(&onResize)
+	}
 
 	// Approval is a session-scoped resource: when the session goes away, every
 	// pending request is cancelled rather than left waiting for a decision that
@@ -324,6 +328,17 @@ func (m *Manager) MarkAllDead() {
 	}
 	m.persist(m.ListAll())
 	m.notifyListChange()
+}
+
+// ShutdownAll joins transport readers and exit watchers without deleting history.
+// It must finish before the encrypted store releases its append handles.
+func (m *Manager) ShutdownAll() {
+	m.MarkAllDead()
+	m.sessions.Range(func(key, value any) bool {
+		value.(*Session).finalize()
+		m.persistOne(key.(string))
+		return true
+	})
 }
 
 // persistOne writes one session's manifest and its shells' manifests.

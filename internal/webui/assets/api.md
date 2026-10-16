@@ -138,6 +138,42 @@ Constraints:
 
 ---
 
+### Encrypted storage bootstrap
+
+The service starts with business operations blocked until storage is unlocked,
+migrated and recovered. Open `storage.html` on the same origin to set up or unlock
+storage. HTTP authentication applies independently of the storage password.
+
+| Method and path | JSON fields | Result |
+|-----------------|-------------|--------|
+| `GET /api/storage/status` | none | `state`, `password_configured`, `legacy_found`, `progress`, optional `error_code` |
+| `POST /api/storage/initialize` | `new_password`, `confirm_password` | 202; only an uninitialized store can generate a new random master key |
+| `POST /api/storage/unlock` | `password` | 202; unlocks an existing password slot and starts migration/recovery |
+| `POST /api/storage/password` | `current_password`, `new_password`, `confirm_password` | 200 only after the replacement envelope is durably saved; current-password proof is required even while unlocked |
+
+Passwords are accepted only in `application/json` bodies (16 KiB maximum), never
+URLs. Unknown fields and trailing JSON are rejected. The three password operations
+share a five-attempts-per-minute limit per process, including successful attempts.
+Remote password operations require TLS or a proxy source explicitly trusted via
+`TERMCP_STORAGE_TRUSTED_PROXIES` with `X-Forwarded-Proto: https`; loopback HTTP is
+allowed. The service does not trust arbitrary remote forwarding headers.
+
+States: `UNINITIALIZED`, `LOCKED`, `MIGRATING`, `RECOVERING`, `READY`,
+`CLEANUP_PENDING`, `FAILED`, `CLOSED`. During bootstrap, session/MCP requests return
+503 with `error: "storage_unavailable"` and the current `storage` status. Management,
+docs, setup assets and storage operations remain available. `CLEANUP_PENDING`
+permits business operations while warning that old plaintext cleanup is incomplete.
+Progress includes `stage`, unit `completed`/`total`, optional `bytes_completed` /
+`bytes_total`, and `resuming` for an interrupted migration.
+
+Confirmation mismatch returns 400; wrong current/storage password returns 403
+without logging out HTTP authentication; incompatible state returns 409; rate
+limits return 429 with `Retry-After`; unsafe password transport returns 426.
+`key_save_uncertain` (503) means publication happened but durability could not be
+confirmed: retain both passwords and verify after resolving the filesystem issue.
+There is no runtime lock endpoint. ENV/system-only stores do not acquire a default
+password or accept password initialization over their existing master key.
+
 ## 4. Connection profiles
 
 ### `GET /api/connections`
@@ -238,9 +274,57 @@ password = "placeholder"
 ```
 
 Response: `201 { "imported": 2, "renamed": [{ "from": "host-one", "to": "host-one-2" }] }`
-when a name is changed; `renamed` is omitted when no names change. The Web UI
-passes the file to this endpoint unchanged; parsing and validation happen on
-the server.
+when a name is changed; `renamed` is omitted when no names change. This raw TOML
+endpoint remains available for existing clients. The Web UI uses the multipart
+import endpoint below; parsing and validation happen on the server.
+
+### `POST /api/connections/batch/export`
+
+Exports the same persistent-profile selection, optionally protected by an
+independent **file password**. This password is separate from the server storage
+master password; another Termcp instance can import the file without the original
+instance's data key. Temporary profiles remain excluded.
+
+Send `Content-Type: application/json` with:
+
+```json
+{"names":["host-one"],"password":"placeholder-file-password","confirm_password":"placeholder-file-password"}
+```
+
+Omit `names` (or use `[]`) to export all persistent remote profiles. Omit both
+password fields, or set both to `""`, for the existing plaintext
+`termcp-connections.toml`. A nonempty password requires a matching
+`confirm_password` and returns `application/octet-stream` as
+`termcp-connections.toml.enc`. The Web UI shows this choice before downloading.
+The legacy `GET /api/connections/batch` remains plaintext; it does not accept a
+password in its URL. All export responses use `Cache-Control: no-store`.
+
+### `POST /api/connections/batch/import?temporary=false`
+
+Accepts either plaintext TOML or the encrypted export. Send `multipart/form-data`
+with exactly one `file` part and an optional `password` field. Let the HTTP client
+set the multipart boundary. Files are detected by content, independent of their
+name. An encrypted file requires its export password; leave the password blank
+for plaintext. The upload is parsed in memory, without plaintext temporary files.
+
+The decoded TOML limit is 16 MiB (an encrypted envelope adds 88 bytes); the
+password limit is 16 KiB in UTF-8. `temporary=true`, collision renaming, validation
+and response fields are identical to the legacy plaintext importer. The complete
+file is authenticated before any profile is added: missing/wrong passwords,
+corrupted ciphertext or malformed TOML import no hosts. A password supplied for a
+plaintext file is rejected, rather than silently ignored.
+
+Both new endpoints inherit HTTP authentication and enforce same-origin POSTs.
+Nonempty passwords require HTTPS or loopback/trusted TLS-proxy transport, as with
+storage password operations. Passwords belong in request bodies only. One new
+import/export may run per handler at a time; another gets 429 with `Retry-After`.
+JSON errors include `password_confirmation_mismatch` (400),
+`import_password_required` (400), `invalid_import_password_or_file` (403),
+`plaintext_import_password` (400), `invalid_connection_file` (400),
+`secure_transport_required` (426), or `connection_transfer_busy` (429).
+Storage write failures return `connection_import_failed` (500). If publication
+happened but durability is unconfirmed, `connection_import_uncertain` (503)
+requires checking the refreshed profile list before retrying, to avoid duplicates.
 
 ### `POST /api/connections/test`
 
@@ -428,7 +512,7 @@ Response 200: Session object (same shape as a list element)
 ### `DELETE /api/sessions/{id}`
 
 **Permanent deletion**: disconnects the session (shells → forwards → SSH connection)
-and removes its on-disk session directory (`manifest.json` + `log.bin` + `log.jsonl`).
+and removes its on-disk session directory (encrypted metadata, event history and index files).
 Irreversible.
 
 ```
@@ -613,6 +697,9 @@ offers no better a signal that a command returned.
 
 ### `GET /api/shells/{id}/output-range`
 
+Output cursors count plaintext output bytes. Encryption headers, tags, resize and
+status events do not advance them; a cursor is never a physical `events.enc` offset.
+
 Reads a slice of a shell's retained output (**path id is a shell_id**).
 
 Compat: `GET /api/sessions/{id}/output-range` still works — a shell_id hits directly,
@@ -647,7 +734,7 @@ Response 200:
 > `d` is the raw byte window placed in a standard JSON string (not base64). A
 > byte sequence that is not valid UTF-8 cannot survive a JSON string; on Windows
 > ConPTY already replaces such sequences before Termcp sees them, and on Linux
-> `cat` of binary data may appear as U+FFFD. The bytes in `log.bin` are never
+> `cat` of binary data may appear as U+FFFD. The bytes in the decrypted output stream are never
 > altered — only this transport representation is lossy.
 
 ### `GET /api/shells/{id}/marks`
@@ -674,7 +761,7 @@ Response 200:
 |-------|---------|
 | `status` | `o` shell output · `i` a write from the HTTP/WebSocket API (the human at the browser) · `a` a write from an AI agent through MCP · `q`/`A` a review decision (no bytes of its own) |
 | `time` | Unix **milliseconds** — the moment the span started. Same unit as every other timestamp in this API (`clock.Now`, the manifests, `log.jsonl`) |
-| `start` | Byte offset in `log.bin` where the span starts |
+| `start` | Plaintext output byte offset where the span starts |
 | `end` | The next mark's `start`; the last span ends at `total_bytes` |
 | `total_bytes` | Current length of the byte log |
 
@@ -692,7 +779,7 @@ answer from the persisted index, so a closed session's timeline stays readable.
 
 | Query | Meaning |
 |-------|---------|
-| `start`, `end` | Restrict the answer to the byte window `[start, end)` of `log.bin`. Both must be given together (`400` otherwise), `start >= 0` and `end >= start` |
+| `start`, `end` | Restrict the answer to the plaintext output byte window `[start, end)`. Both must be given together (`400` otherwise), `start >= 0` and `end >= start` |
 
 With no parameters the response is the shell's whole index, exactly as above —
 the window is an addition, not a change. A windowed response is the part of the

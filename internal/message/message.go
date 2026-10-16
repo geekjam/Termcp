@@ -17,7 +17,7 @@ var ErrSessionForgotten = errors.New("session state was released")
 // of status marks (see docs/design/session-storage.md).
 //
 // The byte log is the single source of truth: a byte's offset is its position in
-// log.bin and is never recomputed from record lengths. The mark index only says
+// the logical plaintext output, independent of encryption records. The mark index only says
 // which status produced which span, so it can be missing, stale, or incomplete
 // without affecting where a byte lives.
 //
@@ -142,8 +142,8 @@ func (m *Manager) OutputSize(sessionID, shellID string) (int64, error) {
 // returns no bytes but still reports the true total, so a caller can tell
 // "empty" from "past the end" without a second call.
 //
-// Both come straight from log.bin: `total` is the file size and the window is a
-// positional read, so the two can never disagree.
+// Both come from the store's plaintext byte view: total and positional windows
+// use the same output coordinate, regardless of the physical file format.
 func (m *Manager) OutputByteRange(sessionID, shellID string, start int64, max int) ([]byte, int64, error) {
 	if m.store == nil {
 		return nil, 0, nil

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/open-mcp-ai/termcp/internal/approval"
@@ -59,13 +60,14 @@ func markdownContentType(next http.Handler) http.Handler {
 
 // Handler serves the browser UI and JSON/SSE APIs at / and /api/... .
 type Handler struct {
-	Sessions   *session.Manager
-	MsgMgr     *message.Manager
-	SSH        *sshconfig.Store
-	ForwardMgr *forward.ForwardManager
-	NotifyMgr  *notify.Manager // active shell notification rules (read-only listing + delete)
-	NoInternal bool            // when true, hide and refuse the built-in loopback profile
-	Version    string          // build version (`termcp -version`), served at GET /api/version
+	configTransferMu sync.Mutex // one bounded upload/KDF operation at a time
+	Sessions         *session.Manager
+	MsgMgr           *message.Manager
+	SSH              *sshconfig.Store
+	ForwardMgr       *forward.ForwardManager
+	NotifyMgr        *notify.Manager // active shell notification rules (read-only listing + delete)
+	NoInternal       bool            // when true, hide and refuse the built-in loopback profile
+	Version          string          // build version (`termcp -version`), served at GET /api/version
 
 	// Daemon marks this process as a background instance (started with
 	// `termcp daemon start` or `termcp daemon stdio`): it may carry an idle
@@ -132,6 +134,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/connections", h.handleListConnections)
 	mux.HandleFunc("GET /api/connections/batch", h.handleExportConnections)
 	mux.HandleFunc("POST /api/connections/batch", h.handleImportConnections)
+	transferCSRF := http.NewCrossOriginProtection()
+	mux.Handle("POST /api/connections/batch/export", transferCSRF.Handler(http.HandlerFunc(h.handleProtectedExportConnections)))
+	mux.Handle("POST /api/connections/batch/import", transferCSRF.Handler(http.HandlerFunc(h.handleProtectedImportConnections)))
 	mux.HandleFunc("GET /api/connections/{name}", h.handleGetConnection)
 	mux.HandleFunc("PUT /api/connections/{name}", h.handlePutConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", h.handleDeleteConnection)

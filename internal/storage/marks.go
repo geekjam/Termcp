@@ -161,6 +161,16 @@ func (s *Store) ReadMarksWindow(sessionID, shellID string, start, end int64) (ma
 // share it: one scan path is what keeps a window and a full read from disagreeing
 // about a span.
 func (s *Store) readMarksWindow(sessionID, shellID string, start, end int64) ([]api.LogMark, int64, error) {
+	if s.enc != nil {
+		var marks []api.LogMark
+		var closer int64
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			var err error
+			marks, closer, err = h.log.ReadMarksWindow(start, end)
+			return err
+		})
+		return marks, closer, err
+	}
 	refs, err := s.markCursors(sessionID, shellID)
 	if err != nil {
 		return nil, 0, err

@@ -9,7 +9,7 @@ kinds of callers:
 |----------|------|--------|
 | Web UI | `/` + `/api.html` | Humans (browser) |
 | MCP | `/sse` + `/message` or `/stream` | AI agents with an MCP client |
-| Agent Skill + REST | `/skills.md` (install once) + `/api/*` | AI agents driving Termcp with `curl` |
+| Agent Skill + REST | `/SKILL.md` (install once) + `/api/*` | AI agents driving Termcp with `curl` |
 | REST + WebSocket | `/api/*` + `/api/ui/ws` | Scripts / programs |
 
 This document covers the REST surface (scripting). Real-time terminal I/O goes over
@@ -39,13 +39,14 @@ can learn the API without MCP and without version drift:
 | Document | Path | When to use it |
 |----------|------|----------------|
 | HTTP API reference (this file) | `/api.md` | You drive Termcp over HTTP yourself (REST/WebSocket): endpoints, bodies, output-cursor semantics |
-| HTTP skill (curl recipes) | `/skills.md` | Install once into a skills directory so the curl workflow is available on demand later |
+| HTTP skill (curl recipes) | `/SKILL.md` | Install once into a skills directory so the curl workflow is available on demand later |
 
-`/skills.md` is served flat (as guessable as `/api.md`) but is a real Agent Skill:
+`/SKILL.md` is served flat (as guessable as `/api.md`) but is a real Agent Skill:
 save it as `termcp/SKILL.md` in your agent's skills directory — the directory name
 is what a skill loader discovers. Claude Code reads `~/.claude/skills/termcp/SKILL.md`;
-agents following the shared convention read `~/.agents/skills/termcp/SKILL.md`
-(project-scoped: `<project>/.claude/skills/termcp/SKILL.md`). Restart the agent
+Codex and agents following the shared convention read `~/.agents/skills/termcp/SKILL.md`
+(project-scoped: `<project>/.claude/skills/termcp/SKILL.md` or
+`<project>/.agents/skills/termcp/SKILL.md`, respectively). Restart the agent
 session afterwards; adding/removing a skill is just writing/deleting that folder.
 
 MCP clients get the same bytes as resources: `resources/list` exposes these two files
@@ -81,16 +82,48 @@ is handed the discovered bind address instead.
 
 Authentication does not apply to these two read-only documents: they carry no data
 and no secrets, and a fresh client (an agent before MCP setup, a script) has to be
-able to fetch them before it can use the API, so `/api.md` and `/skills.md` stay
+able to fetch them before it can use the API, so `/api.md` and `/SKILL.md` stay
 public even when a token is configured. Everything else — Web UI, REST, MCP, WebSocket
 — still requires credentials.
 
+The previous `/skills.md` URL remains a read-only alias for `/SKILL.md`, including
+MCP resource reads. New installations should use the canonical uppercase filename.
+
 ```bash
-curl -fsS "$BASE/api.md"                       # authoritative reference
-DIR=~/.claude/skills                           # Claude Code
-# DIR=~/.agents/skills                         # other agents
-mkdir -p "$DIR/termcp" && curl -fsS "$BASE/skills.md" -o "$DIR/termcp/SKILL.md"
+BASE=http://127.0.0.1:18765                       # replace with your instance origin
+curl -fsS "$BASE/api.md"                          # authoritative reference
+(
+  TERMCP_SKILL_DIR="$HOME/.claude/skills/termcp"   # Claude Code
+  # TERMCP_SKILL_DIR="$HOME/.agents/skills/termcp" # Codex / shared agents
+  # TERMCP_SKILL_DIR="./.agents/skills/termcp"     # current project (Codex)
+  mkdir -p "$TERMCP_SKILL_DIR" &&
+  TERMCP_SKILL_TMP=$(mktemp "$TERMCP_SKILL_DIR/.SKILL.XXXXXX") || exit
+  trap 'rm -f "$TERMCP_SKILL_TMP"' EXIT
+  curl -fsS "$BASE/SKILL.md" -o "$TERMCP_SKILL_TMP" &&
+  mv "$TERMCP_SKILL_TMP" "$TERMCP_SKILL_DIR/SKILL.md"
+)
 ```
+
+On Windows PowerShell:
+
+```powershell
+$termcpBase = 'http://127.0.0.1:18765'
+$termcpSkillDir = Join-Path $HOME '.claude/skills/termcp'
+# Codex / shared agents: use '.agents/skills/termcp' instead.
+# Project scope: use (Get-Location).Path instead of $HOME.
+New-Item -ItemType Directory -Force -Path $termcpSkillDir -ErrorAction Stop | Out-Null
+$termcpSkillTmp = Join-Path $termcpSkillDir ([IO.Path]::GetRandomFileName())
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "$termcpBase/SKILL.md" -OutFile $termcpSkillTmp -ErrorAction Stop
+  Move-Item -LiteralPath $termcpSkillTmp -Destination (Join-Path $termcpSkillDir 'SKILL.md') -Force -ErrorAction Stop
+} finally {
+  Remove-Item -LiteralPath $termcpSkillTmp -Force -ErrorAction SilentlyContinue
+}
+```
+
+These installers download to a unique temporary file before replacing `SKILL.md`,
+so a failed download leaves an existing installation intact. `/api.html` generates
+both commands for the current instance and selected agent/scope.
 
 ## 3. Authentication (optional, off by default)
 
@@ -131,7 +164,7 @@ Constraints:
   kept only the hash — `termcp daemon` management, `termcp stdio` — can
   still authenticate. The hash then doubles as a secret.
 - Tokens are never logged and must not go into URLs (query strings) — use headers.
-- Public exception: the two documentation endpoints `/api.md` and `/skills.md`
+- Public exception: the two documentation endpoints `/api.md` and `/SKILL.md`
   (GET/HEAD only, no data inside) are served **without** credentials, so agents
   and scripts can fetch the docs before they have a token. All other surfaces
   require the token.

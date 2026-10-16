@@ -182,7 +182,8 @@ func credentials(r *http.Request) []candidate {
 // the token.
 var publicPaths = map[string]struct{}{
 	"/api.md":    {},
-	"/skills.md": {},
+	"/SKILL.md":  {},
+	"/skills.md": {}, // legacy skill download URL
 }
 
 // isPublicDoc reports whether the request targets one of the credential-free

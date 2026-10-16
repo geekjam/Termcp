@@ -20,7 +20,15 @@ import (
 // It reads through Assets(), so an operator-supplied --assets directory overrides the embedded copy
 // file by file and a file the directory does not contain is served from the embed.
 func embeddedStaticServer() http.Handler {
-	return noCacheForEmbeddedAssets(markdownContentType(http.FileServer(http.FS(Assets()))))
+	files := http.FileServer(http.FS(Assets()))
+	return noCacheForEmbeddedAssets(markdownContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Keep the previous download URL working while serving one canonical asset.
+		if r.URL.Path == "/skills.md" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/SKILL.md"
+		}
+		files.ServeHTTP(w, r)
+	})))
 }
 
 // noCacheForEmbeddedAssets marks the embedded UI assets no-cache. Embedded files
@@ -219,6 +227,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		// path; everything else under / is a 404.
 		docs := embeddedStaticServer()
 		mux.Handle("/api.md", docs)
+		mux.Handle("/SKILL.md", docs)
 		mux.Handle("/skills.md", docs)
 	}
 }

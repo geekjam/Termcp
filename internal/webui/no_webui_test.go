@@ -14,7 +14,7 @@ import (
 // browser UI would show up here.
 func TestNoWebUIBuildCarriesDocsOnly(t *testing.T) {
 	fsys := Assets()
-	for _, want := range []string{"api.md", "skills.md"} {
+	for _, want := range []string{"api.md", "SKILL.md"} {
 		if _, err := fs.Stat(fsys, want); err != nil {
 			t.Errorf("Assets() is missing %s: %v", want, err)
 		}
@@ -38,5 +38,12 @@ func TestNoWebUIBuildCarriesDocsOnly(t *testing.T) {
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api.md", nil))
 	if rr.Code != http.StatusOK {
 		t.Errorf("GET /api.md in the headless build = %d, want 200", rr.Code)
+	}
+	for _, path := range []string{"/SKILL.md", "/skills.md"} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != http.StatusOK {
+			t.Errorf("GET %s = %d, want 200", path, rr.Code)
+		}
 	}
 }

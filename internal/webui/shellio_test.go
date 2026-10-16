@@ -22,7 +22,8 @@ import (
 // no-MCP integration path.
 var staticDocPaths = []string{
 	"/api.md",
-	"/skills.md",
+	"/SKILL.md",
+	"/skills.md", // compatibility download returns the canonical skill
 }
 
 // TestStaticDocsServed verifies the embedded docs are reachable at their paths.
@@ -80,7 +81,7 @@ func TestMarkdownContentTypeIsPlatformIndependent(t *testing.T) {
 // TestSkillFrontmatter validates the downloadable skill file against the Agent
 // Skills requirements (name + description in YAML frontmatter).
 func TestSkillFrontmatter(t *testing.T) {
-	b, err := readAsset("skills.md")
+	b, err := readAsset("SKILL.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,12 +214,12 @@ func TestApiPageShowsSkillDownload(t *testing.T) {
 	for _, want := range []string{
 		`id="url-skill"`,         // skill URL element (filled from origin by the page script)
 		`id="cfg-skill-install"`, // copy-ready install command
-		`href="/skills.md"`,      // direct download link
+		`href="/SKILL.md"`,       // direct download link
 		`href="/api.md"`,         // document link
-		`var skill = origin + '/skills.md'`,
-		`~/.claude/skills/`,      // Claude Code's skills dir (the only one CC actually reads)
-		`~/.agents/skills/`,      // shared convention for other agents
-		`"$DIR/termcp/SKILL.md"`, // install target: folder name = skill name
+		`var skill = origin + '/SKILL.md'`,
+		`~/.claude/skills/`,            // Claude Code's skills dir (the only one CC actually reads)
+		`~/.agents/skills/`,            // shared convention for other agents
+		`"$TERMCP_SKILL_DIR/SKILL.md"`, // install target: folder name = skill name
 	} {
 		if !strings.Contains(b, want) {
 			t.Errorf("api.html misses %s", want)
@@ -236,10 +237,9 @@ func TestApiPageShowsStdioConfig(t *testing.T) {
 	for _, want := range []string{
 		`id="cfg-stdio-cli"`,  // copy-ready claude mcp add command
 		`id="cfg-stdio-json"`, // copy-ready mcpServers JSON
-		`var stdioArgs = ['daemon', 'stdio'];`,
-		`'claude mcp add termcp -- termcp ' + stdioArgs.join(' ')`,
-		`location.hostname`, // the bridge address follows the browser origin
-		`location.port`,
+		`var stdioArgs = ['stdio', stream];`,
+		`'claude mcp add --scope user termcp -- termcp stdio ' + shellQuote(stream)`,
+		`location.origin`,   // preserve HTTPS and the instance's effective port
 		`TERMCP_AUTH_TOKEN`, // credential travels via the environment
 	} {
 		if !strings.Contains(b, want) {

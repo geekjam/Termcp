@@ -13,14 +13,14 @@ Termcp 通过 **SSE**、**Streamable HTTP** 与 **stdio 桥**三种方式暴露�
 - SSE：`http://<host>:18765/sse`（Claude：`--transport sse` / `type: "sse"`）
 - Streamable HTTP：`http://<host>:18765/stream`（Claude：`--transport http` / `type: "http"`）
 
-可复制配置与 HTTP API 速查：Web UI **`/api.html`**。完整客户端样例见 `README.md` / `README.zh.md`。同一批会话也可用实例自带的 Agent Skill 驱动（`/skills.md` 安装一次，配 `GET /api/resolve` 解析 `termcp://` 定位符，纯 curl）。
+可复制配置与 HTTP API 速查：Web UI **`/api.html`**。完整客户端样例见 `README.md` / `README.zh.md`。同一批会话也可用实例自带的 Agent Skill 驱动（`/SKILL.md` 安装一次，配 `GET /api/resolve` 解析 `termcp://` 定位符，纯 curl）。
 
 ## Resources & Prompts
 
 Besides tools, the server publishes its own HTTP API reference and curl skill as
 MCP resources, and a `learn-api` prompt:
 
-- Resources: `<origin>/api.md` (REST reference) and `<origin>/skills.md` (curl skill).
+- Resources: `<origin>/api.md` (REST reference) and `<origin>/SKILL.md` (curl skill).
   URIs are the instance's real HTTP addresses, so the same string works for `curl`.
   (Tool arguments/results are described by the `tools/list` schemas themselves, so no
   separate tool reference document is served.)
@@ -30,7 +30,7 @@ MCP resources, and a `learn-api` prompt:
   *Agent-facing documents (HTTP + MCP resources)*; this file does not repeat it. The
   resource URIs and the `learn-api` prompt follow the same per-request origin.
 - Prompt: `learn-api` (optional argument `task`) — primes an agent with `/api.md`
-  and `/skills.md` before it scripts against Termcp over REST.
+  and `/SKILL.md` before it scripts against Termcp over REST.
 
 两个文档端点在开启鉴权后仍可**无凭据**获取（仅 GET/HEAD，纯静态、无数据）；其余所有面（REST/MCP/WS/Web UI）依旧要求 token。
 
@@ -55,7 +55,7 @@ Termcp 的 31 个工具按"热路径 / 低频面"分成两类。MCP 标准的 `d
 
 分类由 `internal/mcp/toolopts.go` 的 `deferredTools` 表与 `allLevelCore` 表定义，开关由 `Server.shouldDeferTool` 按级别决定（`mcp.DeferLevel(level)` option）；`TestDeferLoadingPolicy` 会分别校验三种级别，并拦住"新工具未分类"与"僵尸条目"。若要调整分类，改表即可，无需改各处注册代码。
 
-另见：完整的工具参考本来就以 MCP resource 形式随实例提供（`resources/list` 里的 `api.md` / `skills.md`），instructions 的规则 0 已指向它——这正是 #95 "提示放资源展开"的落点：`tools/list` 只带紧凑描述，深度文档按需取。
+另见：完整的工具参考本来就以 MCP resource 形式随实例提供（`resources/list` 里的 `api.md` / `SKILL.md`），instructions 的规则 0 已指向它——这正是 #95 "提示放资源展开"的落点：`tools/list` 只带紧凑描述，深度文档按需取。
 
 **ID 规则（硬）：**
 

@@ -148,7 +148,7 @@ the secret in the browser, where it stays out of the model's context.
 | **SSH profiles** | A central TOML store with batch import/export, in-memory temporary hosts, connection testing, and edit/copy/rename. |
 | **Review mode** | Per-session approval gate: every agent write waits for a human decision. |
 | **Discovery** | `shell_detect` finds the target's interactive shell instead of guessing from the local `PATH`. |
-| **Agent Skill** | Instances serve `/skills.md`, so an agent drives everything with plain `curl`. |
+| **Agent Skill** | Instances serve `/SKILL.md`, so an agent drives everything with plain `curl`. |
 
 ## Security Model
 

@@ -13,7 +13,7 @@ import (
 // Agent-facing documentation surface: MCP resources + prompts.
 //
 // termcp ships its own docs inside the binary and serves them over HTTP
-// (internal/webui/assets: /api.md, /skills.md).
+// (internal/webui/assets: /api.md, /SKILL.md).
 // The same bytes are published as MCP resources so a client that supports
 // resources can list and read them without an HTTP call, and a client that
 // does not can curl the identical URL. Resources are registered from Start()
@@ -35,7 +35,7 @@ var docResources = []docResource{
 		description: "Authoritative REST + WebSocket reference for this termcp instance: endpoints, auth, request/response bodies, output-cursor semantics. Read before scripting against the HTTP API.",
 	},
 	{
-		path:        "skills.md",
+		path:        "SKILL.md",
 		name:        "termcp HTTP skill (curl recipes)",
 		description: "Agent skill for driving termcp over HTTP with curl + jq only: session lifecycle, output polling (live and closed sessions), input/keys/resize, files, forwards, pitfalls. Installable into a skills directory.",
 	},
@@ -121,6 +121,9 @@ func docPathOf(raw string) string {
 	if err != nil {
 		return ""
 	}
+	if u.Path == "/skills.md" {
+		return "SKILL.md" // legacy resource URI; resources/list advertises SKILL.md
+	}
 	for _, doc := range docResources {
 		if u.Path == "/"+doc.path {
 			return doc.path
@@ -161,7 +164,7 @@ func (s *Server) registerLearnAPIPrompt() {
 			// Resolved per request: a client that reached this instance by a LAN
 			// name, a proxy or a tunnel is handed the address it can actually open.
 			apiURL := s.docURLFor(ctx, "api.md")
-			skillURL := s.docURLFor(ctx, "skills.md")
+			skillURL := s.docURLFor(ctx, "SKILL.md")
 			task := strings.TrimSpace(req.Params.Arguments["task"])
 
 			var b strings.Builder

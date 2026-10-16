@@ -12,5 +12,5 @@ const uiEmbedded = false
 // the API it serves is not usable by that agent — only the browser UI is
 // dropped. Selected by `go build -tags no_webui` (make build-api).
 //
-//go:embed assets/api.md assets/skills.md
+//go:embed assets/api.md assets/SKILL.md
 var embeddedAssets embed.FS

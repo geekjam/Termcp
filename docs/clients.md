@@ -6,7 +6,7 @@ Termcp 在同一个端口上同时提供四种入口，它们操作**同一批�
 | --- | --- | --- |
 | Web UI | 人 | 浏览器（`/`） |
 | MCP | AI Agent | Streamable HTTP（`/stream`）、SSE（`/sse`）、stdio 桥（本地子进程） |
-| Agent Skill | AI Agent（纯 curl，无需 MCP） | 实例自带的 `/skills.md` + REST |
+| Agent Skill | AI Agent（纯 curl，无需 MCP） | 实例自带的 `/SKILL.md` + REST |
 | REST + WebSocket | 脚本 / 程序 | `/api/*`、`/api/ui/ws` |
 
 四者共享一套会话内核，所以你在浏览器里看到的、Agent 正在驱动的、脚本在读的是同一条终端。工具面见 [`mcp-tools.md`](./mcp-tools.md)，端点见 [`api.md`](./api.md)。
@@ -104,7 +104,7 @@ Termcp 在同一个端口上同时提供四种入口，它们操作**同一批�
 
 ## 认证
 
-单个静态 token 保护整个 HTTP 面——Web UI、REST API、MCP SSE、MCP streamable HTTP 与浏览器 WebSocket。（只读文档 `/api.md` 与 `/skills.md` 保持公开，好让 Agent 在拿到 token 之前就能取到它们。）配置是可选的，仅限 loopback 绑定时保持免配置默认；非 loopback 绑定不带 token 是启动错误。
+单个静态 token 保护整个 HTTP 面——Web UI、REST API、MCP SSE、MCP streamable HTTP 与浏览器 WebSocket。（只读文档 `/api.md` 与 `/SKILL.md` 保持公开，好让 Agent 在拿到 token 之前就能取到它们。）配置是可选的，仅限 loopback 绑定时保持免配置默认；非 loopback 绑定不带 token 是启动错误。
 
 ```bash
 # 明文：flag 或环境变量
@@ -149,8 +149,19 @@ TERMCP_AUTH_HASH='sha256-...' ./termcp
 ```
 
 ```bash
-claude mcp add --transport http termcp http://localhost:18765/stream
+claude mcp add --scope user --transport http termcp http://localhost:18765/stream
+codex mcp add termcp --url http://localhost:18765/stream
 ```
+
+Claude Code 默认示例用用户级配置；仅供当前项目使用时改为 `--scope project`。
+带认证的 Codex 实例可使用环境变量引用，命令只保存变量名称：
+
+```bash
+codex mcp add termcp --url http://localhost:18765/stream --bearer-token-env-var TERMCP_AUTH_TOKEN
+```
+
+启动 Agent 前让其环境包含 `TERMCP_AUTH_TOKEN`。配置后用 `claude mcp get termcp`
+或 `codex mcp get termcp` 检查，并重启 Agent 会话。
 
 - 同一台机器：`http://127.0.0.1:18765/stream`。
 - Open WebUI 在 Docker 里、Termcp 在宿主机：`http://host.docker.internal:18765/stream`（macOS/Windows），或宿主机的 LAN IP。
@@ -172,7 +183,7 @@ claude mcp add --transport http termcp http://localhost:18765/stream
 ```
 
 ```bash
-claude mcp add --transport sse termcp http://localhost:18765/sse
+claude mcp add --scope user --transport sse termcp http://localhost:18765/sse
 ```
 
 ## 方式 C —— stdio 桥（`termcp stdio`）
@@ -220,20 +231,44 @@ Web UI 的 **API / MCP / SKILLS** 页面（`/api.html`）给出两种 HTTP 传�
 
 不想配 MCP 客户端？实例自带一份可安装的 **Agent Skill**，让任意 agent 只用 `curl` 就能驱动 Termcp——包括识别用户从 Web UI 复制的 `termcp://` 定位符。
 
+下载地址和文件名统一为 `/SKILL.md`，旧 `/skills.md` 保留为兼容别名。
+下面命令无需 token，先下载到唯一临时文件，下载成功后才替换已有 Skill。
+
 ```bash
-# 公开端点：下载文档本身不需要 token
-curl -fsS http://<host>:18765/skills.md -o /tmp/termcp-SKILL.md
+BASE=http://127.0.0.1:18765 # 改为实例地址，保留 http/https 和端口
+(
+  TERMCP_SKILL_DIR="$HOME/.claude/skills/termcp"   # Claude Code 用户级
+  # TERMCP_SKILL_DIR="$HOME/.agents/skills/termcp" # Codex / 共享约定用户级
+  # TERMCP_SKILL_DIR="./.claude/skills/termcp"     # Claude Code 项目级
+  # TERMCP_SKILL_DIR="./.agents/skills/termcp"     # Codex / 共享约定项目级
+  mkdir -p "$TERMCP_SKILL_DIR" &&
+  TERMCP_SKILL_TMP=$(mktemp "$TERMCP_SKILL_DIR/.SKILL.XXXXXX") || exit
+  trap 'rm -f "$TERMCP_SKILL_TMP"' EXIT
+  curl -fsS "$BASE/SKILL.md" -o "$TERMCP_SKILL_TMP" &&
+  mv "$TERMCP_SKILL_TMP" "$TERMCP_SKILL_DIR/SKILL.md"
+)
+```
 
-# Claude Code 读取 ~/.claude/skills/<名字>/SKILL.md
-mkdir -p ~/.claude/skills/termcp && cp /tmp/termcp-SKILL.md ~/.claude/skills/termcp/SKILL.md
+Windows PowerShell：
 
-# 其他遵循共享约定的 agent 读取 ~/.agents/skills/<名字>/SKILL.md
-mkdir -p ~/.agents/skills/termcp && cp /tmp/termcp-SKILL.md ~/.agents/skills/termcp/SKILL.md
+```powershell
+$termcpBase = 'http://127.0.0.1:18765'
+$termcpSkillDir = Join-Path $HOME '.claude/skills/termcp'
+# Codex / 共享约定：改为 '.agents/skills/termcp'。
+# 项目级：把 $HOME 改为 (Get-Location).Path，在目标项目目录执行。
+New-Item -ItemType Directory -Force -Path $termcpSkillDir -ErrorAction Stop | Out-Null
+$termcpSkillTmp = Join-Path $termcpSkillDir ([IO.Path]::GetRandomFileName())
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "$termcpBase/SKILL.md" -OutFile $termcpSkillTmp -ErrorAction Stop
+  Move-Item -LiteralPath $termcpSkillTmp -Destination (Join-Path $termcpSkillDir 'SKILL.md') -Force -ErrorAction Stop
+} finally {
+  Remove-Item -LiteralPath $termcpSkillTmp -Force -ErrorAction SilentlyContinue
+}
 ```
 
 安装后需重启 agent 会话（skill 在会话启动时加载）。Claude Code 没有单独的 skill 子命令：安装 = 放进目录，卸载 = `rm -rf ~/.claude/skills/termcp`（以 plugin 形式分发时用 `claude plugin install/uninstall`）。
 
-装好之后，一句“打开 termcp://rock64 并执行 `uname -a`”即可端到端完成：skill 会先用 `GET /api/resolve?url=...` 解析定位符，用解析出的 `ssh_config` 建会话，发送命令并轮询输出。同一份 skill 也注册为 MCP resource `<origin>/skills.md`，`/api.html` 会给出当前实例的准确安装命令。
+装好之后，一句“打开 termcp://rock64 并执行 `uname -a`”即可端到端完成：skill 会先用 `GET /api/resolve?url=...` 解析定位符，用解析出的 `ssh_config` 建会话，发送命令并轮询输出。同一份 skill 也注册为 MCP resource `<origin>/SKILL.md`，`/api.html` 会给出当前实例的准确安装命令。
 
 ## 接入脚本 / 程序（REST API）
 

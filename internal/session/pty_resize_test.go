@@ -46,17 +46,15 @@ func TestSession_PtyResizeReachesChild(t *testing.T) {
 	}
 	defer s.Terminate(true, 0)
 
-	time.Sleep(300 * time.Millisecond)
-
 	sizeCmd, marker := testSizeCommand()
 
 	// askSize runs the size command in the shell and returns until the child
 	// reports exactly rows x cols (empty when it never does).
-	askSize := func(rows, cols int) string {
+	askSize := func(rows, cols int, timeout time.Duration) string {
 		t.Helper()
 		want := marker + fmt.Sprintf("%d %d", rows, cols)
 		var out string
-		deadline := time.Now().Add(3 * time.Second)
+		deadline := time.Now().Add(timeout)
 		for time.Now().Before(deadline) {
 			if err := s.PrimaryShell().SendTerminalBytes([]byte(testShellInput(sizeCmd)), false); err != nil {
 				t.Fatalf("send size command: %v", err)
@@ -70,8 +68,10 @@ func TestSession_PtyResizeReachesChild(t *testing.T) {
 		return out
 	}
 
-	// Initial geometry is the one the session was created with.
-	if out := askSize(24, 80); !strings.Contains(out, marker+"24 80") {
+	// Initial geometry also establishes readiness: a cold PowerShell may not
+	// read commands for several seconds. Keep that startup budget separate
+	// from the existing deadline for each subsequent resize.
+	if out := askSize(24, 80, 30*time.Second); !strings.Contains(out, marker+"24 80") {
 		t.Fatalf("expected initial tty size 24 80, got %q", out)
 	}
 
@@ -80,7 +80,7 @@ func TestSession_PtyResizeReachesChild(t *testing.T) {
 		if err := s.PrimaryShell().ResizePty(size.rows, size.cols); err != nil {
 			t.Fatalf("resize %dx%d: %v", size.rows, size.cols, err)
 		}
-		if out := askSize(size.rows, size.cols); !strings.Contains(out, marker+fmt.Sprintf("%d %d", size.rows, size.cols)) {
+		if out := askSize(size.rows, size.cols, 3*time.Second); !strings.Contains(out, marker+fmt.Sprintf("%d %d", size.rows, size.cols)) {
 			t.Fatalf("window-change %dx%d did not reach the child tty, got %q", size.rows, size.cols, out)
 		}
 	}

@@ -491,7 +491,27 @@ func TestHandleSendInput_ReturnsImmediately(t *testing.T) {
 	sessionID := m["session_id"].(string)
 	shellID := m["shell_id"].(string)
 
-	time.Sleep(300 * time.Millisecond)
+	// Establish a live command reader before measuring writes. ConPTY can
+	// discard input during PowerShell startup, which is independent of the
+	// send_input latency this test checks. Split the marker in the command so
+	// terminal echo alone cannot satisfy the readiness handshake.
+	readyMarker := "mcp_send_ready"
+	readyCommand := "printf '%s\\n' 'mcp_''send_ready'"
+	if runtime.GOOS == "windows" {
+		readyCommand = "Write-Output ('mcp_' + 'send_ready')"
+	}
+	ready := false
+	readyDeadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(readyDeadline) {
+		testRunLine(t, s, shellID, readyCommand)
+		if strings.Contains(testReadOutputUntil(t, s, shellID, readyMarker, time.Second), readyMarker) {
+			ready = true
+			break
+		}
+	}
+	if !ready {
+		t.Fatal("interactive shell did not execute the readiness probe")
+	}
 
 	// Run a command whose own runtime is far below the budget: if send_input were
 	// waiting for it, the elapsed time would be dominated by the sleep, not by the

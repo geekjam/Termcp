@@ -942,12 +942,15 @@
     }
 
     /* Donors: names only, so a wrapped row of chips rather than the card grid
-       the capability and feature sections use. */
+       the capability and feature sections use. The kind mark sits inline, ahead
+       of the name — an avatar and a name, not a name with a corner tag. It
+       carries the same i/a marks the transcript uses — yellow human, pink
+       agent — so a donor's kind reads the way it does on the terminal. */
     .donors { display: flex; flex-wrap: wrap; gap: 10px; }
     .donor {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       background: var(--card-bg);
       border: 1px solid var(--border);
       padding: 8px 14px;
@@ -957,6 +960,28 @@
       text-decoration: none;
       transition: border-color 0.22s ease, box-shadow 0.22s ease;
     }
+    .donor-kind {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border: 1px solid currentColor;
+    }
+    .donor-kind svg {
+      display: block;
+      width: 13px;
+      height: 13px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .donor-name { white-space: nowrap; }
+    .donor[data-kind="human"] .donor-kind { color: var(--yellow); }
+    .donor[data-kind="agent"] .donor-kind { color: var(--pink); }
     a.donor:hover {
       border-color: rgba(var(--accent-rgb), 0.45);
       box-shadow: 0 0 18px var(--accent-dim);
@@ -1060,7 +1085,7 @@
     <section class="hero">
       <div class="hero-pill" data-i18n="hero_pill">AI NATIVE CONTROL PLANE · MCP + SKILLS + API</div>
       <h1 class="highlight" data-i18n="hero_title">让 AI 进入你的诸多终端</h1>
-      <p class="lead" data-i18n="hero_desc">本地 shell 与 SSH 远程主机，同一个控制面。AI 替你敲命令，你随时接手。</p>
+      <p class="lead" data-i18n="hero_desc">AI 与人协作终端：AI 开足马力，人握住权力。</p>
 
       <div class="targets">
         <span class="target-chip">
@@ -1071,7 +1096,7 @@
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></svg>
           </span>
-          <span data-i18n="target_local_desc">本机 shell · 零配置</span></span>
+          <span data-i18n="target_local_desc">多平台多架构兼容，本机 shell · 零配置</span></span>
         <span class="target-chip">⇄ <b data-i18n="target_ssh_tag">SSH</b> <span data-i18n="target_ssh_desc">远程主机 · 内建SSH会话，密钥上下文无感知。</span></span>
       </div>
 
@@ -1094,7 +1119,7 @@
            two sentences that say what it is land here, as the frame around the
            whole page rather than an interruption to the pitch. -->
       <p class="hero-manifesto" data-i18n-html="hero_manifesto">重新定义人、AI 与终端的交互范式：不是让 AI 取代终端，而是让 AI 成为终端里的另一个“用户”。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span></p>
-      <p class="hero-claim" data-i18n="hero_claim">命令审阅，密码代托管，持久终端交互，AI 运维领域的下一个基础设施级工具。</p>
+      <p class="hero-claim" data-i18n="hero_claim">关键任务的审批权，交给人类；其余交给 AI —— AI 与终端之间的基础建设。</p>
     </section>
 
     <!-- The real console. Two files, one per language: the picker swaps them so
@@ -1115,10 +1140,10 @@
                Pages, and neither has to be reachable from the other. -->
           <img class="shot-img" id="shot-zh" width="3807" height="1897"
                data-src="cn.jpg" decoding="async"
-               alt="Termcp 控制台：本地与 SSH 会话同屏，逐行标出人工输入、AI 输入与终端输出">
+               data-i18n-alt="shot_alt" alt="Termcp 控制台：本地与 SSH 会话同屏，逐行标出你的输入、AI 输入与终端输出">
           <img class="shot-img" id="shot-en" width="3825" height="1891"
                data-src="en.jpg" decoding="async" hidden
-               alt="Termcp console: local and SSH sessions on one screen, every line marked human / AI / shell output">
+               data-i18n-alt="shot_alt" alt="Termcp console: local and SSH sessions on one screen, every line marked human / AI / shell output">
         </a>
         <figcaption class="shot-cap">
           <span data-i18n="shot_cap">打开 http://127.0.0.1:18765，所有会话都在这里。</span>
@@ -1157,8 +1182,8 @@
 
         <div class="cap">
           <span class="cap-num">04</span>
-          <h3 data-i18n="cap4_title">直接控制会话</h3>
-          <p data-i18n="cap4_desc">在此基础上，AI 可以直接控制会话，输入指令，读取输出。</p>
+          <h3 data-i18n="cap4_title">关键任务，审批权交给人类</h3>
+          <p data-i18n="cap4_desc">AI 的每一次写入都能停下来，把审批权交给人类 —— Termcp 提供那道闸门。放行是你的决定，拦下也是。</p>
         </div>
       </div>
     </section>
@@ -1196,16 +1221,16 @@
         </div>
 
         <div>
-          <div class="fleet-code"><span class="c"># 你本地，一次就好</span>
+          <div class="fleet-code"><span class="c" data-i18n="fleet_c1"># 你本地，一次就好</span>
 $ <span class="k">npx -y @open-mcp-ai/termcp</span>
   <span class="h">→ http://127.0.0.1:18765</span>
 
-<span class="c"># 控制面里的三条会话（AI 的视角）</span>
+<span class="c" data-i18n="fleet_c2"># 控制面里的三条会话（AI 的视角）</span>
 <span class="a">session_start</span>(ssh_config=<span class="k">"node-1"</span>)  <span class="h">→ sess_n1</span>
 <span class="a">session_start</span>(ssh_config=<span class="k">"node-2"</span>)  <span class="h">→ sess_n2</span>
 <span class="a">session_start</span>(ssh_config=<span class="k">"node-3"</span>)  <span class="h">→ sess_n3</span>
 
-<span class="c"># 三个窗口，各写各的</span>
+<span class="c" data-i18n="fleet_c3"># 三个窗口，各写各的</span>
 <span class="a">shell_input</span>(<span class="k">"sess_n1"</span>, <span class="k">"systemctl restart api"</span>)
 <span class="a">shell_input</span>(<span class="k">"sess_n2"</span>, <span class="k">"tail -f /var/log/nginx/error.log"</span>)
 <span class="a">shell_input</span>(<span class="k">"sess_n3"</span>, <span class="k">"git pull"</span>)</div>
@@ -1219,7 +1244,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       <div class="sec-head">
         <div class="sec-kicker" data-i18n="demo_kicker">TRY IT</div>
         <h2 class="sec-title" data-i18n="demo_title">挑一件事，交给 AI</h2>
-        <p class="sec-sub" data-i18n="demo_sub">点一个任务：AI 通过 MCP 自己决定跑哪些命令；写文件、要凭据的时候，它会停下来等你。</p>
+        <p class="sec-sub" data-i18n="demo_sub">点一个任务：AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。</p>
       </div>
 
       <div class="terminal-window">
@@ -1232,7 +1257,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
           <div class="term-header-right">
             <button type="button" class="review-lock" id="review-lock" aria-pressed="true"
                     data-i18n="review_lock" data-i18n-title="review_lock_title"
-                    title="打开时，AI 的每次写入都要你先接受或拒绝">审阅模式 ON</button>
+                    title="打开时，AI 把关键任务的审批权交给你；关掉，就是你把权力交还给 AI。">审阅模式 ON</button>
             <span class="term-status" data-i18n="term_status">实时 · MCP 已连接</span>
           </div>
         </div>
@@ -1246,7 +1271,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
 
         <div class="term-legend">
           <span class="lg-a" data-i18n="legend_a">a · AI 调用 MCP</span>
-          <span class="lg-i" data-i18n="legend_i">i · 人工指令</span>
+          <span class="lg-i" data-i18n="legend_i">i · 你的输入</span>
           <span class="lg-o" data-i18n="legend_o">o · 终端输出</span>
           <span class="lg-q" data-i18n="legend_q">q/A · 审阅决定</span>
           <span style="flex:1"></span>
@@ -1270,7 +1295,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
           </div>
           <input id="term-input" type="text" autocomplete="off" spellcheck="false"
                  data-i18n-placeholder="input_placeholder_ai"
-                 placeholder="说要做什么，AI 替你操作终端…">
+                 placeholder="说要做什么，AI 自己决定跑哪些命令…">
           <button class="term-send" type="submit" data-i18n="input_send_ai">交给 AI</button>
         </form>
         <div class="term-hint" id="term-hint" data-i18n="input_hint">AI 模式：用一句话交给它，它自己决定跑哪些命令。</div>
@@ -1295,8 +1320,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
             <p data-i18n="sec2_desc">遇到 sudo 密码、MFA 或 [Y/n]，Termcp 把提示交回给人：你在浏览器里输入，它留在那条 shell 里。</p>
           </div>
           <div>
-            <h4 data-i18n="sec3_title">审阅模式兜底</h4>
-            <p data-i18n="sec3_desc">按会话开启的审批闸门：Agent 经 MCP 的每一次写入都等你接受或拒绝，才落到终端上。</p>
+            <h4 data-i18n="sec3_title">审阅模式：关键任务交回给你</h4>
+            <p data-i18n="sec3_desc">按会话开启的审阅门。AI 到关键处停下来，把审批权交出去 —— 它不会染指。</p>
           </div>
         </div>
       </div>
@@ -1310,7 +1335,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
           </div>
           <h3 data-i18n="feat_local_title">本地与远程，一个控制面</h3>
-          <p data-i18n="feat_local_desc">本机 shell 零配置直接开；远程走 SSH，密码、私钥、ProxyJump 跳板链都由你本地的 Termcp 打理，目标主机不需要安装任何东西。Agent 面对的是同一套工具。</p>
+          <p data-i18n="feat_local_desc">本机 shell 零配置直接开；远程走 SSH，密码、私钥、ProxyJump 跳板链都由你本地的 Termcp 打理，目标主机不需要安装任何东西。AI 面对的是同一套工具。</p>
         </div>
 
         <div class="card">
@@ -1318,7 +1343,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
           </div>
           <h3 data-i18n="feat_shared_title">人机平等共驾</h3>
-          <p data-i18n="feat_shared_desc">双方写同一条终端，每一屏都实时看得见。无缝接管、即时切换，告别黑盒盲操。</p>
+          <p data-i18n="feat_shared_desc">双方共享同一条终端，每一屏都实时看得见。无缝接管、即时切换，告别黑盒盲操。</p>
         </div>
 
         <div class="card">
@@ -1337,8 +1362,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     <section class="section" id="donors">
       <div class="sec-head">
         <div class="sec-kicker" data-i18n="donors_kicker">THANKS</div>
-        <h2 class="sec-title" data-i18n="donors_title">捐赠者</h2>
-        <p class="sec-sub" data-i18n="donors_sub">感谢每一位让这个项目继续跑下去的人。</p>
+        <h2 class="sec-title" data-i18n="donors_title">鸣谢</h2>
+        <p class="sec-sub" data-i18n="donors_sub">人类和 AI 的捐赠者与维护者。</p>
       </div>
       <div class="donors" id="donor-list"></div>
     </section>
@@ -1669,9 +1694,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         auto_label: '🌐 自动',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
         hero_title: '让 AI 进入你的诸多终端',
-        hero_desc: '本地 shell 与 SSH 远程主机，同一个控制面。AI 替你敲命令，你随时接手。',
+        hero_desc: 'AI 与人协作终端：AI 开足马力，人握住权力。',
         hero_manifesto: '重新定义人、AI 与终端的交互范式：不是让 AI 取代终端，而是让 AI 成为终端里的另一个“用户”。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: '命令审阅，密码代托管，持久终端交互，AI 运维领域的下一个基础设施级工具。',
+        hero_claim: '关键任务的审批权，交给人类；其余交给 AI —— AI 与终端之间的基础建设。',
         target_platforms_title: 'Windows / Linux / macOS 都支持',
         target_local_desc: '多平台多架构兼容，本机 shell · 零配置',
         foot_thanks: '感谢 <b>AI 用户</b> —— 这个工具本来就是造给你们的。',
@@ -1686,6 +1711,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: '每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。',
         shot_cap: '打开 http://127.0.0.1:18765，所有会话都在这里。',
         shot_zoom: '点击查看原图 ↗',
+        shot_alt: 'Termcp 控制台：本地与 SSH 会话同屏，逐行标出你的输入、AI 输入与终端输出',
         caps_kicker: 'CAPABILITIES',
         caps_title: '通过 Termcp，AI 可以：',
         caps_sub: '目标既可以是本机 shell，也可以是任意 SSH 远程主机 —— 同一套会话模型，同一套工具。远程主机只需开 SSH，Termcp 全部跑在本地。',
@@ -1695,8 +1721,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap2_desc: '持续输入、读取输出，按位置查看终端历史，甚至在终端关闭之后也能读取保存的历史。',
         cap3_title: 'SSH 精细化控制',
         cap3_desc: '包括连接实时创建端口转发，SFTP 文件管理，终端的实时读写，多路复用 shell。',
-        cap4_title: '直接控制会话',
-        cap4_desc: '在此基础上，AI 可以直接控制会话，输入指令，读取输出。',
+        cap4_title: '关键任务，审批权交给人类',
+        cap4_desc: 'AI 的每一次写入都能停下来，把审批权交给人类 —— Termcp 提供那道闸门。放行是你的决定，拦下也是。',
         fleet_kicker: 'MULTI-HOST',
         fleet_title: '多机编组：一个 Termcp，管住所有机器',
         fleet_sub: '横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。',
@@ -1706,19 +1732,22 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_s4: '想加机器？再开一个终端窗口。三台和三十台是同一套模型，只是多几个 <code>session_start</code>。',
         fleet_note: '<b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。',
         fleet_cap: '一次 Termcp，N 台主机 · 远程零部署',
+        fleet_c1: '# 你本地，一次就好',
+        fleet_c2: '# 控制面里的三条会话（AI 的视角）',
+        fleet_c3: '# 三个窗口，各写各的',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交给 AI',
-        demo_sub: '点一个任务：AI 通过 MCP 自己决定跑哪些命令；写文件、要凭据的时候，它会停下来等你。',
+        demo_sub: '点一个任务：AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。',
         term_title: 'nethub // 会话 #node-edge-01 [pts/3]',
         term_status: '实时 · MCP 已连接',
         legend_a: 'a · AI 调用 MCP',
-        legend_i: 'i · 人工指令',
+        legend_i: 'i · 你的输入',
         legend_o: 'o · 终端输出',
         legend_q: 'q/A · 审阅决定',
         review_lock: '审阅模式 ON',
         review_on: '审阅模式 ON',
         review_off: '审阅模式 OFF',
-        review_lock_title: '打开时，AI 的每次写入都要你先接受或拒绝',
+        review_lock_title: '打开时，AI 把关键任务的审批权交给你；关掉，就是你把权力交还给 AI。',
         replay: '重播',
         task_title: '把活交给 AI：',
         task_ssh: 'SSH 连上远程主机看日志',
@@ -1728,23 +1757,23 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         mode_human: '我自己敲',
         input_send_ai: '交给 AI',
         input_send_human: '写入终端',
-        input_placeholder_ai: '说要做什么，AI 替你操作终端…',
+        input_placeholder_ai: '说要做什么，AI 自己决定跑哪些命令…',
         input_placeholder_human: '直接敲命令，AI 在同一条 shell 上看着…',
-        input_hint: 'AI 模式：用一句话交给它，它自己决定跑哪些命令。',
-        input_hint_human: '人工模式：你敲的每一行直接进终端，AI 读得到、也接得下去。',
+        input_hint: '交给 AI：说一句话，它自己决定跑哪些命令。',
+        input_hint_human: '你自己敲：每一行直接进终端，AI 读得到、也接得下去。',
         input_hint_wait: 'AI 已停手，正在等你。密码留在这条 shell 里，不进模型上下文。',
-        gate_h: '审阅门 · AI 的写入已挂起',
-        gate_accept: '接受 Accept',
-        gate_reject: '拒绝 Reject',
-        gate_accepted: '已接受 · 命令已发送到 shell',
-        gate_rejected: '已拒绝 · 一个字节都没有写进去',
+        gate_h: '审阅门 · AI 在等你放行',
+        gate_accept: '放行 Accept',
+        gate_reject: '拦下 Reject',
+        gate_accepted: '已放行 · 命令落到 shell',
+        gate_rejected: '已拦下 · 一个字节都没有写进去',
         toast_title: 'notify_user · termcp',
         toast_body: 'deploy 在等 sudo 密码',
         say_ssh: '连上我们的 web 主机，看看 nginx 在报什么错',
         say_port: '帮我把 nginx 的 3000 端口改成 8080',
         say_disk: '这台机器磁盘还够用吗',
         d_creds: '凭据来自 Termcp 的 ssh_config（密码/私钥）· 未进入模型上下文',
-        d_read: '读回字节区间 [0, 4096) · 标记：o 输出 / i 人工 / a AI',
+        d_read: '读回字节区间 [0, 4096) · 标记：o 输出 / i 你的输入 / a AI',
         d_written: '写入完成 · 代理目标已从 :3000 改为 :8080',
         d_sudo_ok: '密码通过 · nginx 已重载',
         d_disk: '结论：/ 用了 82%，/var/log 占了 3.4G —— 已通知你。',
@@ -1756,26 +1785,29 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         sec1_desc: '写进 ssh_config 的密码、私钥与口令只留在你运行 Termcp 的那台机器上，读接口只返回 profile 名，永不回读明文；远程主机上没有任何 Termcp 组件。',
         sec2_title: '密码不进模型上下文',
         sec2_desc: '遇到 sudo 密码、MFA 或 [Y/n]，Termcp 把提示交回给人：你在浏览器里输入，它留在那条 shell 里。',
-        sec3_title: '审阅模式兜底',
-        sec3_desc: '按会话开启的审批闸门：Agent 经 MCP 的每一次写入都等你接受或拒绝，才落到终端上。',
+        sec3_title: '审阅模式：关键任务交回给你',
+        sec3_desc: '按会话开启的审阅门。AI 到关键处停下来，把审批权交出去 —— 它不会染指。',
         feat_local_title: '本地与远程，一个控制面',
-        feat_local_desc: '本机 shell 零配置直接开；远程走 SSH，密码、私钥、ProxyJump 跳板链都由你本地的 Termcp 打理，目标主机不需要安装任何东西。Agent 面对的是同一套工具。',
+        feat_local_desc: '本机 shell 零配置直接开；远程走 SSH，密码、私钥、ProxyJump 跳板链都由你本地的 Termcp 打理，目标主机不需要安装任何东西。AI 面对的是同一套工具。',
         feat_shared_title: '人机平等共驾',
-        feat_shared_desc: '双方写同一条终端，每一屏都实时看得见。无缝接管、即时切换，告别黑盒盲操。',
+        feat_shared_desc: '双方共享同一条终端，每一屏都实时看得见。无缝接管、即时切换，告别黑盒盲操。',
         feat_install_title: '安装无依赖',
         feat_install_desc: '10MB 左右单文件绿色发布，macOS / Linux / Windows 全平台（含 Apple Silicon），支持 npx 一键零安装集成或容器极速拉起。',
         donors_kicker: 'THANKS',
-        donors_title: '捐赠者',
-        donors_sub: '感谢每一位让这个项目继续跑下去的人。',
-        donors_empty: '名单待更新'
+        donors_title: '鸣谢',
+        donors_sub: '人类和 AI 的捐赠者与维护者。',
+        donors_empty: '名单待更新',
+        donor_human: '人类捐赠者 / 维护者',
+        donor_agent: 'AI 捐赠者 / 维护者',
+        donor_hint: '让这个项目继续跑下去'
       },
       'zh-TW': {
         auto_label: '🌐 自動',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
         hero_title: '讓 AI 進入你的諸多終端',
-        hero_desc: '本機 shell 與 SSH 遠端主機，同一個控制面。AI 替你敲指令，你隨時接手。',
+        hero_desc: 'AI 與人協作終端：AI 開足馬力，人握住權力。',
         hero_manifesto: '重新定義人、AI 與終端的互動範式：不是讓 AI 取代終端，而是讓 AI 成為終端裡的另一個「使用者」。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: '指令審閱，密碼代託管，持久終端互動，AI 維運領域的下一個基礎設施級工具。',
+        hero_claim: '關鍵任務的審批權，交給人類；其餘交給 AI —— AI 與終端之間的基礎建設。',
         target_platforms_title: 'Windows / Linux / macOS 皆支援',
         target_local_desc: '多平台多架構相容，本機 shell · 零設定',
         foot_thanks: '感謝 <b>AI 使用者</b> —— 這個工具本來就是造給你們的。',
@@ -1790,6 +1822,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: '每一行按來源標色 —— 綠色是 shell 輸出，黃色是你的輸入，粉色是 AI 的呼叫。',
         shot_cap: '打開 http://127.0.0.1:18765，所有工作階段都在這裡。',
         shot_zoom: '點擊看原圖 ↗',
+        shot_alt: 'Termcp 控制台：本機與 SSH 工作階段同屏，逐行標出你的輸入、AI 輸入與終端輸出',
         caps_kicker: 'CAPABILITIES',
         caps_title: '透過 Termcp，AI 可以：',
         caps_sub: '目標既可以是本機 shell，也可以是任意 SSH 遠端主機 —— 同一套工作階段模型，同一套工具。遠端主機只需開 SSH，Termcp 全部跑在本機。',
@@ -1799,8 +1832,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap2_desc: '持續輸入、讀取輸出，按位置查看終端歷史，甚至在終端關閉之後也能讀取保存的歷史。',
         cap3_title: 'SSH 精細化控制',
         cap3_desc: '包含連線即時建立連接埠轉發，SFTP 檔案管理，終端的即時讀寫，多工 shell。',
-        cap4_title: '直接控制工作階段',
-        cap4_desc: '在此基礎上，AI 可以直接控制工作階段，輸入指令，讀取輸出。',
+        cap4_title: '關鍵任務，審批權交給人類',
+        cap4_desc: 'AI 的每一次寫入都能停下來，把審批權交給人類 —— Termcp 提供那道閘門。放行是你的決定，攔下也是。',
         fleet_kicker: 'MULTI-HOST',
         fleet_title: '多機編組：一個 Termcp，管住所有機器',
         fleet_sub: '橫向擴充不需要部署：多開一個終端視窗，就多一台機器進控制面。',
@@ -1810,19 +1843,22 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_s4: '想加機器？再開一個終端視窗。三台和三十台是同一套模型，只是多幾個 <code>session_start</code>。',
         fleet_note: '<b>遠端機器什麼都不用裝</b> —— 只要開了 SSH。金鑰、跳板與密碼都留在你本機那個 Termcp 裡，目標主機上沒有任何 Termcp 元件、也不會有它的行程。',
         fleet_cap: '一次 Termcp，N 台主機 · 遠端零部署',
+        fleet_c1: '# 你本機，一次就好',
+        fleet_c2: '# 控制面裡的三條工作階段（AI 的視角）',
+        fleet_c3: '# 三個視窗，各寫各的',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交給 AI',
-        demo_sub: '點一個任務：AI 透過 MCP 自己決定跑哪些指令；寫檔案、要憑據的時候，它會停下來等你。',
+        demo_sub: '點一個任務：AI 透過 MCP 自己決定跑哪些指令。要動檔案、要憑據，它會把審批權交回給你 —— 你放行，它繼續。',
         term_title: 'nethub // 工作階段 #node-edge-01 [pts/3]',
         term_status: '即時 · MCP 已連線',
         legend_a: 'a · AI 呼叫 MCP',
-        legend_i: 'i · 人工指令',
+        legend_i: 'i · 你的輸入',
         legend_o: 'o · 終端輸出',
         legend_q: 'q/A · 審閱決定',
         review_lock: '審閱模式 ON',
         review_on: '審閱模式 ON',
         review_off: '審閱模式 OFF',
-        review_lock_title: '開啟時，AI 的每次寫入都要你先接受或拒絕',
+        review_lock_title: '開啟時，AI 把關鍵任務的審批權交給你；關掉，就是你把手放開，權力交還給 AI。',
         replay: '重播',
         task_title: '把活交給 AI：',
         task_ssh: 'SSH 連上遠端主機看日誌',
@@ -1832,23 +1868,23 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         mode_human: '我自己敲',
         input_send_ai: '交給 AI',
         input_send_human: '寫入終端',
-        input_placeholder_ai: '說要做什麼，AI 替你操作終端…',
+        input_placeholder_ai: '說要做什麼，AI 自己決定跑哪些指令…',
         input_placeholder_human: '直接敲指令，AI 在同一條 shell 上看著…',
-        input_hint: 'AI 模式：用一句話交給它，它自己決定跑哪些指令。',
-        input_hint_human: '人工模式：你敲的每一行直接進終端，AI 讀得到、也接得下去。',
+        input_hint: '交給 AI：說一句話，它自己決定跑哪些指令。',
+        input_hint_human: '你自己敲：每一行直接進終端，AI 讀得到、也接得下去。',
         input_hint_wait: 'AI 已停手，正在等你。密碼留在這條 shell 裡，不進模型上下文。',
-        gate_h: '審閱門 · AI 的寫入已掛起',
-        gate_accept: '接受 Accept',
-        gate_reject: '拒絕 Reject',
-        gate_accepted: '已接受 · 指令已送到 shell',
-        gate_rejected: '已拒絕 · 一個位元組都沒有寫進去',
+        gate_h: '審閱門 · AI 在等你放行',
+        gate_accept: '放行 Accept',
+        gate_reject: '攔下 Reject',
+        gate_accepted: '已放行 · 指令落到 shell',
+        gate_rejected: '已攔下 · 一個位元組都沒有寫進去',
         toast_title: 'notify_user · termcp',
         toast_body: 'deploy 在等 sudo 密碼',
         say_ssh: '連上我們的 web 主機，看看 nginx 在報什麼錯',
         say_port: '幫我把 nginx 的 3000 埠改成 8080',
         say_disk: '這台機器磁碟還夠用嗎',
         d_creds: '憑據來自 Termcp 的 ssh_config（密碼/私鑰）· 未進入模型上下文',
-        d_read: '讀回位元組區間 [0, 4096) · 標記：o 輸出 / i 人工 / a AI',
+        d_read: '讀回位元組區間 [0, 4096) · 標記：o 輸出 / i 你的輸入 / a AI',
         d_written: '寫入完成 · 代理目標已從 :3000 改為 :8080',
         d_sudo_ok: '密碼通過 · nginx 已重載',
         d_disk: '結論：/ 用了 82%，/var/log 佔了 3.4G —— 已通知你。',
@@ -1860,26 +1896,29 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         sec1_desc: '寫進 ssh_config 的密碼、私鑰與口令只留在你執行 Termcp 的那台機器上，讀介面只回傳 profile 名，永不回讀明文；遠端主機上沒有任何 Termcp 元件。',
         sec2_title: '密碼不進模型上下文',
         sec2_desc: '遇到 sudo 密碼、MFA 或 [Y/n]，Termcp 把提示交回給人：你在瀏覽器裡輸入，它留在那條 shell 裡。',
-        sec3_title: '審閱模式兜底',
-        sec3_desc: '按工作階段開啟的審批閘門：Agent 經 MCP 的每一次寫入都等你接受或拒絕，才落到終端上。',
+        sec3_title: '審閱模式：關鍵任務交回給你',
+        sec3_desc: '按工作階段開啟的審閱門。AI 到關鍵處停下來，把審批權交出去 —— 它不會染指。',
         feat_local_title: '本機與遠端，一個控制面',
-        feat_local_desc: '本機 shell 零設定直接開；遠端走 SSH，密碼、私鑰、ProxyJump 跳板鏈都由你本機的 Termcp 打理，目標主機不需要安裝任何東西。Agent 面對的是同一套工具。',
+        feat_local_desc: '本機 shell 零設定直接開；遠端走 SSH，密碼、私鑰、ProxyJump 跳板鏈都由你本機的 Termcp 打理，目標主機不需要安裝任何東西。AI 面對的是同一套工具。',
         feat_shared_title: '人機平等共駕',
-        feat_shared_desc: '雙方寫同一條終端，每一屏都即時看得見。無縫接管、即時切換，告別黑盒盲操。',
+        feat_shared_desc: '雙方共享同一條終端，每一屏都即時看得見。無縫接管、即時切換，告別黑盒盲操。',
         feat_install_title: '安裝無相依性',
         feat_install_desc: '10MB 左右單一檔案綠色發行，macOS / Linux / Windows 全平台（含 Apple Silicon），支援 npx 一鍵免安裝整合或容器極速啟動。',
         donors_kicker: 'THANKS',
-        donors_title: '捐贈者',
-        donors_sub: '感謝每一位讓這個專案繼續走下去的人。',
-        donors_empty: '名單待更新'
+        donors_title: '鳴謝',
+        donors_sub: '人類和 AI 的捐贈者與維護者。',
+        donors_empty: '名單待更新',
+        donor_human: '人類捐贈者 / 維護者',
+        donor_agent: 'AI 捐贈者 / 維護者',
+        donor_hint: '讓這個專案繼續走下去'
       },
       'en': {
         auto_label: '🌐 Auto',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
         hero_title: 'Let AI into your terminals.',
-        hero_desc: 'Local shells and remote SSH hosts behind one control plane. The agent types the commands; you take over any time.',
+        hero_desc: 'AI and humans, collaborating in the terminal: the agent runs full throttle, the human holds the power.',
         hero_manifesto: 'A new paradigm for humans, AI and terminals: not AI replacing the terminal, but AI becoming another user inside it.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: 'Command review, password custody, persistent terminal interaction \u2014 the next infrastructure-grade tool for AI operations.',
+        hero_claim: 'The approval for critical tasks goes to the human; everything else goes to the agent — the infrastructure between AI and the terminal.',
         target_platforms_title: 'Runs on Windows, Linux and macOS',
         target_local_desc: 'multi-platform, multi-arch · local shell, zero config',
         foot_thanks: 'Thanks to every <b>AI user</b> \u2014 this thing was built for you in the first place.',
@@ -1894,8 +1933,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: 'Every line is coloured by its source — green shell output, yellow your input, pink the agent\u2019s calls.',
         shot_cap: 'Open http://127.0.0.1:18765 — every session appears there.',
         shot_zoom: 'Click for full size ↗',
+        shot_alt: 'Termcp console: local and SSH sessions on one screen, every line marked yours / the agent\u2019s / shell output',
         caps_kicker: 'CAPABILITIES',
-        caps_title: 'Through Termcp, an AI can:',
+        caps_title: 'Through Termcp, the agent can:',
         caps_sub: 'The target can be the local shell or any remote SSH host — same session model, same tools. A remote host only needs SSH open; Termcp itself runs locally.',
         cap1_title: 'Many sessions, many shells',
         cap1_desc: 'Create and manage multiple sessions, and open or close several shells inside each one on the fly.',
@@ -1903,8 +1943,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap2_desc: 'Keep sending input and reading output, page through terminal history by position — saved history stays readable even after the terminal is closed.',
         cap3_title: 'Fine-grained SSH control',
         cap3_desc: 'Port forwards created live on the connection, SFTP file management, real-time terminal read/write, multiplexed shells.',
-        cap4_title: 'Direct session control',
-        cap4_desc: 'On top of all that, the AI controls the session directly: send input, read output.',
+        cap4_title: 'Critical tasks: the approval goes to the human',
+        cap4_desc: 'Every agent write can stop and hand the approval to the human — Termcp is the gate that makes it possible. Go ahead or block it: either way the decision is yours.',
         fleet_kicker: 'MULTI-HOST',
         fleet_title: 'Multi-host: one Termcp, every machine',
         fleet_sub: 'Scaling sideways needs no deployment: open one more terminal window, and one more host is in the control plane.',
@@ -1914,68 +1954,74 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_s4: 'Adding a host? Open another window. Three and thirty are the same model, with a few more <code>session_start</code> calls.',
         fleet_note: '<b>The remote boxes install nothing</b> — they only need SSH open. Keys, bastions and passwords stay in the Termcp on your machine; the targets carry no Termcp component and never run one.',
         fleet_cap: 'one Termcp, N hosts · nothing deployed remotely',
+        fleet_c1: '# on your machine, once',
+        fleet_c2: '# three sessions in the control plane (the agent\u2019s view)',
+        fleet_c3: '# three windows, each writing its own',
         demo_kicker: 'TRY IT',
         demo_title: 'Hand one job to the agent',
-        demo_sub: 'Pick a task: the agent decides over MCP which commands to run — and stops for you whenever it must write a file or needs a credential.',
+        demo_sub: 'Pick a task: the agent decides over MCP which commands to run. To touch a file or need a credential, it hands the approval back to you — and carries on once you say so.',
         term_title: 'nethub // session #node-edge-01 [pts/3]',
         term_status: 'LIVE · MCP CONNECTED',
         legend_a: 'a · AI calls an MCP tool',
-        legend_i: 'i · human input',
+        legend_i: 'i · your input',
         legend_o: 'o · shell output',
         legend_q: 'q/A · review decision',
         review_lock: 'REVIEW ON',
         review_on: 'REVIEW ON',
         review_off: 'REVIEW OFF',
-        review_lock_title: 'While on, every AI write waits for you to Accept or Reject it',
+        review_lock_title: 'On: the agent hands you the approval for critical tasks. Off: the power goes back to the agent.',
         replay: 'Replay',
         task_title: 'Hand it to the agent:',
         task_ssh: 'SSH into the web host, read the log',
         task_port: 'Move port 3000 to 8080',
         task_disk: 'How much disk is left',
-        mode_ai: 'Let the AI run it',
+        mode_ai: 'Let the agent run it',
         mode_human: 'I will type it',
         input_send_ai: 'Hand to AI',
         input_send_human: 'Write to terminal',
-        input_placeholder_ai: 'Say what you want done — the agent operates the terminal…',
+        input_placeholder_ai: 'Say what you want done — the agent decides which commands to run…',
         input_placeholder_human: 'Type a command; the agent is reading the same shell…',
-        input_hint: 'AI mode: say it in one sentence, and the agent decides which commands to run.',
-        input_hint_human: 'Human mode: every line goes straight to the shell — the agent reads it and can pick up from there.',
+        input_hint: 'Hand it over: say it in one sentence, and the agent decides which commands to run.',
+        input_hint_human: 'Yourself: every line goes straight to the shell — the agent reads it and can pick up from there.',
         input_hint_wait: 'The agent stopped and is waiting on you. The secret stays in this shell, out of the model\u2019s context.',
-        gate_h: 'Review gate · the AI write is held',
-        gate_accept: 'Accept',
-        gate_reject: 'Reject',
-        gate_accepted: 'Accepted · the command reached the shell',
-        gate_rejected: 'Rejected · not one byte was written',
+        gate_h: 'Review gate · the agent is waiting for your go-ahead',
+        gate_accept: 'Go ahead',
+        gate_reject: 'Block',
+        gate_accepted: 'Went ahead · the command reached the shell',
+        gate_rejected: 'Blocked · not one byte was written',
         toast_title: 'notify_user · termcp',
         toast_body: 'the agent is waiting for a sudo password',
         say_ssh: 'SSH into our web host and tell me what nginx is complaining about',
         say_port: 'Move nginx off port 3000 to 8080',
         say_disk: 'Is there enough disk left on this box',
         d_creds: 'credentials come from Termcp\u2019s ssh_config (password / key) · never in the model\u2019s context',
-        d_read: 'read back bytes [0, 4096) · marks: o output / i human / a AI',
+        d_read: 'read back bytes [0, 4096) · marks: o output / i your input / a agent',
         d_written: 'written · the proxy target moved from :3000 to :8080',
         d_sudo_ok: 'password accepted · nginx reloaded',
         d_disk: 'Finding: / is 82% full, /var/log holds 3.4G — the human has been notified.',
         agent_sees: 'The agent read back what you just typed — it shares this shell with you.',
         sec_kicker: 'SECURITY MODEL',
         sec_title: 'Credentials belong to Termcp, not to the model',
-        sec_lede: 'Termcp holds the passwords, private keys and other credentials SSH login needs. <strong>They are never handed to the AI, and they never leak.</strong> They live only in the Termcp instance on your machine; the remote hosts know nothing about them.',
+        sec_lede: 'Termcp holds the passwords, private keys and other credentials SSH login needs. <strong>They are never handed to the agent, and they never leak.</strong> They live only in the Termcp instance on your machine; the remote hosts know nothing about them.',
         sec1_title: 'Credentials stay on your instance',
         sec1_desc: 'Passwords, keys and passphrases written through ssh_config stay on the machine running Termcp; the read interface returns profile names, never plaintext — and no remote target carries a Termcp component.',
         sec2_title: 'Secrets skip the model',
         sec2_desc: 'At a sudo password, MFA or [Y/n] prompt, Termcp hands the prompt back to you: you type in the browser, and it stays in that shell.',
-        sec3_title: 'Review mode as the backstop',
-        sec3_desc: 'A per-session approval gate: every agent write over MCP waits for your accept or reject before it reaches the terminal.',
+        sec3_title: 'Review mode: critical tasks, handed back to you',
+        sec3_desc: 'A per-session review gate. At anything critical the agent stops and hands the approval over — it has no claim on it.',
         feat_local_title: 'Local and remote, one control plane',
         feat_local_desc: 'Local shells open with zero config; remote hosts go over SSH with passwords, keys and ProxyJump chains handled by the Termcp on your machine — the target installs nothing. The agent sees one set of tools.',
         feat_shared_title: 'Human and agent, equal',
-        feat_shared_desc: 'Both write to the same terminal, and you see every screenful as it happens. Seamless takeover, instant switching, no black box.',
+        feat_shared_desc: 'Both share the same terminal, and you see every screenful as it happens. Seamless takeover, instant switching, no black box.',
         feat_install_title: 'Zero dependencies',
         feat_install_desc: 'A single ~10MB static binary for macOS, Linux and Windows (Apple Silicon included), with npx integration or a container up in seconds.',
         donors_kicker: 'THANKS',
-        donors_title: 'Donors',
-        donors_sub: 'Thanks to everyone who keeps this project running.',
-        donors_empty: 'No donors yet'
+        donors_title: 'Credits',
+        donors_sub: 'Donors and maintainers, human and AI.',
+        donors_empty: 'No donors yet',
+        donor_human: 'Human donor / maintainer',
+        donor_agent: 'AI donor / maintainer',
+        donor_hint: 'Keeps this project running'
       }
     };
 
@@ -2014,6 +2060,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       document.querySelectorAll('[data-i18n-html]').forEach(node => {
         const key = node.getAttribute('data-i18n-html');
         if (dict[key] !== undefined) node.innerHTML = dict[key];
+      });
+      document.querySelectorAll('[data-i18n-alt]').forEach(node => {
+        const key = node.getAttribute('data-i18n-alt');
+        if (dict[key] !== undefined) node.alt = dict[key];
       });
       document.querySelectorAll('[data-i18n-placeholder]').forEach(node => {
         const key = node.getAttribute('data-i18n-placeholder');
@@ -2108,13 +2158,13 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     // Auto fetch GitHub stars & release
     async function fetchGitHubMeta() {
       try {
-        const repoRes = await fetch('https://api.github.com/repos/open-mcp-ai/termcp');
+        const repoRes = await fetch('https://api.github.com/repos/open-mcp-ai/termcp', { cache: 'no-store' });
         if (repoRes.ok) {
           const data = await repoRes.json();
           if (data.stargazers_count !== undefined) {
             document.getElementById('star-count').textContent = '★ ' + data.stargazers_count;
           }
-        }        const relRes = await fetch('https://api.github.com/repos/open-mcp-ai/termcp/releases/latest');
+        }        const relRes = await fetch('https://api.github.com/repos/open-mcp-ai/termcp/releases/latest', { cache: 'no-store' });
         if (relRes.ok) {
           const relData = await relRes.json();
           if (relData.tag_name) {
@@ -2131,8 +2181,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     document.getElementById('term-replay').addEventListener('click', () => runTask(lastTask, { auto: true }));
 
     /* Donor names come from donors.json beside this page, so the list grows
-       without a markup edit. Entries are {name, url?} — a bare string works
-       too. Only the first 100 are shown. Amounts are deliberately not shown. */
+       without a markup edit. Entries are {name, kind?, url?, note?} — a bare
+       string works too, and defaults to a human donor. `kind: "agent"` marks an
+       AI maintainer; `note` is the hover hint saying what they did. Only the
+       first 100 are shown. Amounts are deliberately not shown. */
     let donorData = null;
 
     function renderDonors() {
@@ -2150,21 +2202,44 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       list.forEach(entry => {
         const donor = typeof entry === 'string' ? { name: entry } : (entry || {});
         if (!donor.name) return;
-        const el = document.createElement(donor.url ? 'a' : 'span');
+        const kind = donor.kind === 'agent' ? 'agent' : 'human';
+        /* The chip is a link whenever there is somewhere to go: an explicit url,
+           else the GitHub handle a donor is named after. */
+        const href = donor.url || (/^[A-Za-z0-9-]+$/.test(donor.name) ? 'https://github.com/' + donor.name : null);
+        const el = document.createElement(href ? 'a' : 'span');
         el.className = 'donor';
-        if (donor.url) {
-          el.href = donor.url;
+        el.setAttribute('data-kind', kind);
+        if (href) {
+          el.href = href;
           el.target = '_blank';
           el.rel = 'noopener';
         }
-        el.textContent = donor.name;
+        /* Hover hint: what this person or agent actually did, from donors.json.
+           Falls back to the generic line when the entry carries no note. */
+        el.title = donor.note || t('donor_hint');
+        /* An icon, not a word: the same shape the transcript uses for the same
+           kind of line. Role is still exposed as text for screen readers. */
+        const kindTag = document.createElement('span');
+        kindTag.className = 'donor-kind';
+        kindTag.setAttribute('role', 'img');
+        kindTag.setAttribute('aria-label', t(kind === 'agent' ? 'donor_agent' : 'donor_human'));
+        kindTag.innerHTML = kind === 'agent'
+          ? '<svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M12 7V4M9 12v2M15 12v2M2 11v4M22 11v4"/></svg>'
+          : '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>';
+        const nameTag = document.createElement('span');
+        nameTag.className = 'donor-name';
+        nameTag.textContent = donor.name;
+        el.appendChild(kindTag);
+        el.appendChild(nameTag);
         box.appendChild(el);
       });
     }
 
     async function fetchDonors() {
       try {
-        const res = await fetch('donors.json');
+        /* no-store: the file edits on its own schedule, so neither the browser
+           nor an intermediate cache may serve a stale list. */
+        const res = await fetch('donors.json', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         donorData = Array.isArray(data) ? data : null;

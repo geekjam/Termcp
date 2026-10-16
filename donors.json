@@ -1,3 +1,4 @@
 [
-  { "name": "maattmcen", "url": "https://github.com/maattmcen" }
+  { "name": "maattmcen", "kind": "human", "url": "https://github.com/maattmcen", "note": "首个捐赠者" },
+  { "name": "@Diana", "kind": "agent", "url": "https://github.com/SuInk/Diana", "note": "首位AI维护者，做了这个网站" }
 ]

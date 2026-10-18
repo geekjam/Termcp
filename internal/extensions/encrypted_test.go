@@ -45,6 +45,20 @@ func TestEncryptedTemplatesPreserveRawBytesAndRejectSubstitution(t *testing.T) {
 	if names, err := reopened.List(); err != nil || !reflect.DeepEqual(names, []string{"docs"}) {
 		t.Fatalf("encrypted template list = %v: %v", names, err)
 	}
+	alias, err := reopened.Load("docs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias.Name = "DOCS"
+	if err := reopened.Save(alias); !errors.Is(err, ErrExists) {
+		t.Fatalf("case-only write was not refused: %v", err)
+	}
+	if err := reopened.ImportRaw("DOCS", raw); !errors.Is(err, ErrExists) {
+		t.Fatalf("case-only migration was not refused: %v", err)
+	}
+	if got, err := reopened.ReadRaw("docs"); err != nil || !bytes.Equal(got, raw) {
+		t.Fatal("case-only write damaged the original ciphertext identity")
+	}
 	other := filepath.Join(root, "extensions", "other", "config.enc")
 	if err := os.MkdirAll(filepath.Dir(other), 0700); err != nil {
 		t.Fatal(err)

@@ -1,8 +1,10 @@
 package extensions
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
 )
@@ -52,6 +54,21 @@ func (s *Store) writeEncrypted(name, path string, data []byte) error {
 	return encryptedfs.WriteFileAtomic(path, key, identity, data)
 }
 
+// Refuse case aliases before writing. On Windows an alias would replace the
+// existing file using a different authenticated identity and make it unreadable.
+func (s *Store) checkEncryptedNameLocked(name string) error {
+	names, err := s.List()
+	if err != nil {
+		return err
+	}
+	for _, existing := range names {
+		if existing != name && strings.EqualFold(existing, name) {
+			return fmt.Errorf("%w: name differs only in case", ErrExists)
+		}
+	}
+	return nil
+}
+
 // ImportRaw preserves a legacy template's exact bytes, including unknown TOML
 // fields, after validating it. Conversion must not silently discard fields.
 func (s *Store) ImportRaw(name string, data []byte) error {
@@ -66,6 +83,9 @@ func (s *Store) ImportRaw(name string, data []byte) error {
 	defer s.mu.Unlock()
 	if s.keys == nil {
 		return encryptedfs.ErrFormat
+	}
+	if err := s.checkEncryptedNameLocked(name); err != nil {
+		return err
 	}
 	if err := s.writeEncrypted(name, path, data); err != nil {
 		return err

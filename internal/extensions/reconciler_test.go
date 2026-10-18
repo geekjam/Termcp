@@ -1,12 +1,14 @@
 package extensions
 
 import (
+	"context"
 	"errors"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	ssh "github.com/charmbracelet/ssh"
 	"github.com/open-mcp-ai/termcp/internal/forward"
 	"github.com/open-mcp-ai/termcp/internal/mcpbridge"
 	"github.com/open-mcp-ai/termcp/internal/message"
@@ -38,13 +40,16 @@ func immediateExitCommand() (string, []string) {
 // server, a session manager, both stores, and a running reconciler. Registering
 // cleanup after t.TempDir (LIFO) keeps the exit watchers ahead of the directory
 // removal.
-func startReconciler(t *testing.T) *Reconciler {
+func startReconciler(t *testing.T, configure ...func(*sshserver.Server)) *Reconciler {
 	t.Helper()
 	srv := sshserver.New()
 	// The in-process MCP bridge is what an extension with a url runs on its
 	// channel (production registers it at startup, see main.go), so every test
 	// that drives the extension layer gets the same server an instance has.
 	mcpbridge.RegisterBuiltin(srv)
+	for _, fn := range configure {
+		fn(srv)
+	}
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -227,6 +232,56 @@ func TestReconcilerReportsStartupFailure(t *testing.T) {
 	// the next attempt opens a channel on it rather than dialing the host again.
 	if n := len(r.sessMgr.ListAll()); n != 1 {
 		t.Errorf("the group's session should outlive a failed member start, got %d sessions", n)
+	}
+}
+
+// A slow starter may outlive probeGrace before exiting. Drive that path through
+// a real SSH channel, with its exit gated by the test rather than process speed.
+func TestReconcilerDetachesExitedChannel(t *testing.T) {
+	exit := make(chan struct{})
+	r := startReconciler(t, func(srv *sshserver.Server) {
+		srv.RegisterCommand("test-late-exit", func(ctx context.Context, _ ssh.Session, _ []string) int {
+			select {
+			case <-exit:
+				return 3
+			case <-ctx.Done():
+				return 0
+			}
+		})
+	})
+	ext := Preset(KindMCP)
+	ext.Name, ext.Target, ext.Command = "late-exit", "internal", "test-late-exit"
+	mustSave(t, r.store, &ext)
+	up := waitForStatus(t, r, ext.Name, StatusAvailable)
+	sess := r.sessMgr.Get(up.SessionID)
+	shell := sess.GetChildShell(up.ShellID)
+	if shell == nil {
+		t.Fatal("available extension has no channel")
+	}
+	// Freeze the background walk so the assertion observes exactly the walk
+	// that notices the exit, before any retry has had a chance to run.
+	r.Stop()
+	close(exit)
+	select {
+	case <-shell.Done():
+	case <-time.After(8 * time.Second):
+		t.Fatal("the controlled extension did not exit")
+	}
+	if err := r.reconcileAll(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	down, _ := r.Status(ext.Name)
+	if down.Status != StatusUnavailable || down.ShellID != "" || down.NextRetry == 0 {
+		t.Errorf("exited channel was not detached with a retry scheduled: %+v", down)
+	}
+	if sess.GetChildShell(up.ShellID) != nil {
+		t.Error("the exited channel remains in the shared session")
+	}
+	if r.liveSession(up.SessionID) != sess {
+		t.Error("detaching the exited channel destroyed the shared connection")
+	}
+	if len(down.Failures) != 1 || !strings.Contains(down.Failures[0].Reason, "exit code 3") {
+		t.Errorf("the process exit reason was lost: %+v", down.Failures)
 	}
 }
 

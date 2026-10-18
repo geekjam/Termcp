@@ -471,7 +471,9 @@ func (r *Reconciler) reconcileAll(ctx context.Context) error {
 				// The channel the extension runs on ended by itself: its process is
 				// gone while the connection it shares is not, so the retry opens a
 				// channel instead of redialing the host.
-				r.fail(st, "session", r.channelEndReason(sess, st))
+				reason := r.channelEndReason(sess, st)
+				r.detach(st)
+				r.fail(st, "session", reason)
 				continue
 			}
 			if err := r.ensureForwards(m.ext, st); err != nil {
@@ -589,9 +591,11 @@ func (r *Reconciler) probe(ctx context.Context, name string) {
 // clear — a dial that timed out, a process that exited, a port that was taken —
 // so the four things that must happen together happen in one place.
 func (r *Reconciler) fail(st *extState, stage, reason string) {
-	st.recordFailure(stage, reason)
-	st.mark(StatusUnavailable)
-	st.scheduleBackoff()
+	st.mu.Lock()
+	st.recordFailureLocked(stage, reason)
+	st.status = StatusUnavailable
+	st.scheduleBackoffLocked()
+	st.mu.Unlock()
 	r.notifyChange()
 }
 
@@ -599,9 +603,12 @@ func (r *Reconciler) fail(st *extState, stage, reason string) {
 // than climbed, so the walk stops re-probing a condition the probe cannot change
 // and the extension waits for an edit, the panel's retry key, or the agent's.
 func (r *Reconciler) failForGood(st *extState, stage, reason string) {
-	st.recordFailure(stage, reason)
-	st.mark(StatusUnavailable)
-	st.exhaustRetryBudget()
+	st.mu.Lock()
+	st.recordFailureLocked(stage, reason)
+	st.status = StatusUnavailable
+	st.autoRetry = false
+	st.readyAt = time.Time{}
+	st.mu.Unlock()
 	r.notifyChange()
 }
 
@@ -1248,13 +1255,12 @@ func (st *extState) readyAtLocked() time.Time {
 	return st.readyAt
 }
 
-// scheduleBackoff sets the earliest retry from the consecutive-failure count.
+// scheduleBackoffLocked sets the earliest retry from the consecutive-failure count.
 // Once the budget is spent it schedules nothing and clears the flag, so the walk
 // stops bringing the extension up on its own; the timer, not a counter, is what
 // would otherwise keep it probing forever.
-func (st *extState) scheduleBackoff() {
-	st.mu.Lock()
-	defer st.mu.Unlock()
+// The caller holds mu so the failure, status and retry time publish together.
+func (st *extState) scheduleBackoffLocked() {
 	if st.consecutive > maxAutoRetries {
 		st.autoRetry = false
 		st.readyAt = time.Time{}
@@ -1312,6 +1318,10 @@ func (st *extState) lastStage() string {
 func (st *extState) recordFailure(stage, reason string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	st.recordFailureLocked(stage, reason)
+}
+
+func (st *extState) recordFailureLocked(stage, reason string) {
 	if len(st.failures) > 0 {
 		last := st.failures[len(st.failures)-1]
 		if last.Stage == stage && last.Reason == reason {

@@ -184,6 +184,11 @@ func (s *Store) Save(e *Extension) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.keys != nil {
+		if err := s.checkEncryptedNameLocked(e.Name); err != nil {
+			return err
+		}
+	}
 	if err := s.saveLocked(e); err != nil {
 		return err
 	}

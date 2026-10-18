@@ -110,7 +110,10 @@ credential tools on stdin, and never printed or stored in the repository.
 The Test workflow accepts pushes to `encryption-test`, PRs targeting `main` or
 `dev`, and manual dispatches. Adding this coverage does not itself run remote CI.
 The Windows test job also repeats process startup, stream filtering, line reads,
-shell continuation, logging and concurrent output-order checks across CPU counts.
+shell continuation, logging, concurrent output-order checks and extension process
+exit cleanup across CPU counts. Terminal contrast probes wait for the real xterm
+render event through Chrome's DevTools protocol, including a delayed-write case;
+virtual-time timers are not evidence that the browser has painted a frame.
 
 ### Local checks
 

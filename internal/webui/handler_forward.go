@@ -54,6 +54,20 @@ func (h *Handler) handleDeleteNotification(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "notification manager not available"})
 		return
 	}
+	// The route names the rule, not the session, so the owner is looked up the way
+	// the forward-close route does it: a rule is a capability of the session that
+	// registered it, and an extension granted no shell_notify must not have one
+	// removed — or, more to the point, a caller with a restricted handle must not
+	// be able to reach a rule belonging to a session it may not touch.
+	for _, rule := range h.NotifyMgr.List("") {
+		if rule.ID != id {
+			continue
+		}
+		if restRefuseTool(w, h.sessionOwning(rule.SessionID, rule.ShellID), "shell_notify") {
+			return
+		}
+		break
+	}
 	if !h.NotifyMgr.Unregister(id) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "notification rule not found"})
 		return
@@ -71,6 +85,19 @@ func (h *Handler) handleDeleteForward(w http.ResponseWriter, r *http.Request) {
 	if h.ForwardMgr == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "forward manager not available"})
 		return
+	}
+	// Closing is a capability too: a tunnel a template declared is torn down by the
+	// reconciler when the extension is parked or removed, so letting REST close one
+	// out from under a running extension would be a way to break a session that
+	// granted no forward capability at all. The forward's owner is looked up here
+	// because the route names the forward, not the session.
+	for _, fw := range h.ForwardMgr.List() {
+		if fw.ForwardID == id {
+			if restRefuseTool(w, h.sessionOwning(fw.SessionID, ""), "forward") {
+				return
+			}
+			break
+		}
 	}
 	if err := h.ForwardMgr.Close(id); err != nil {
 		slog.Error("handleDeleteForward: close failed", "forward_id", id, "err", err)
@@ -112,6 +139,12 @@ func (h *Handler) handleCreateForward(w http.ResponseWriter, r *http.Request) {
 	sess := h.Sessions.Get(sessionID)
 	if sess == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
+		return
+	}
+	// A tunnel is a capability of the session it rides: an extension whose template
+	// granted no forwards must not have one opened on its connection by REST, and
+	// the ports it names are subject to the same whitelist rule as everything else.
+	if restRefuseTool(w, sess, "forward") {
 		return
 	}
 	// A forward needs a live transport; a closed (DEAD) session must not mint a

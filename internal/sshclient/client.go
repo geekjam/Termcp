@@ -15,7 +15,10 @@ import (
 
 // ExecSession wraps an active SSH client session.
 type ExecSession struct {
-	client       *ssh.Client
+	client *ssh.Client
+	// session is the channel a command runs on. It is nil for a bare client (see
+	// BareClient): a connection with no process on it, which is what a shell-less
+	// container is.
 	session      *ssh.Session
 	Stdin        io.WriteCloser
 	Stdout       io.Reader
@@ -144,14 +147,7 @@ func StartWithConfig(ctx context.Context, addr string, config *ssh.ClientConfig,
 	if err != nil {
 		return nil, fmt.Errorf("ssh handshake: %w", err)
 	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("new session: %w", err)
-	}
-
-	return startSession(client, session, command, args, pty, rows, cols, true)
+	return StartWithChain(ctx, client, nil, command, args, pty, rows, cols)
 }
 
 // DialConn opens the underlying TCP connection to addr, optionally via a SOCKS5 proxy.
@@ -194,14 +190,7 @@ func StartWithConn(ctx context.Context, conn net.Conn, config *ssh.ClientConfig,
 	if err != nil {
 		return nil, fmt.Errorf("ssh handshake: %w", err)
 	}
-
-	session, err := client.NewSession()
-	if err != nil {
-		client.Close()
-		return nil, fmt.Errorf("new session: %w", err)
-	}
-
-	return startSession(client, session, command, args, pty, rows, cols, true)
+	return StartWithChain(ctx, client, nil, command, args, pty, rows, cols)
 }
 
 // StartWithClient creates a new ExecSession on an existing SSH client without dialing.
@@ -255,6 +244,24 @@ func (es *ExecSession) CloseReaders() {
 	closeIfCloser(es.Stderr)
 }
 
+// BareClient wraps an SSH client that carries no session channel. It is the
+// transport a shell-less container runs on (session.Config.NoShell): SFTP and
+// port forwards need the connection, and nothing needs a channel, so opening one
+// would start a process on the target that nobody asked for — and nothing would
+// watch it, since a container's liveness is the connection's.
+//
+// ownClient follows the other constructors: Close closes the client only when
+// this wrapper owns it, so a caller that shares a client is not surprised by its
+// connection going away.
+func BareClient(client *ssh.Client, ownClient bool, closers []io.Closer) *ExecSession {
+	return &ExecSession{
+		client:       client,
+		ownClient:    ownClient,
+		extraClosers: closers,
+		done:         make(chan struct{}),
+	}
+}
+
 // Done returns a channel that closes when the remote process exits.
 func (es *ExecSession) Done() <-chan struct{} {
 	return es.done
@@ -284,8 +291,13 @@ func isExitError(err error) bool {
 	return ok
 }
 
-// ResizePty sends a window-change request for the session.
+// ResizePty sends a window-change request for the session. A bare client has no
+// channel to resize, which is an error rather than a no-op: the caller asked for
+// something this transport cannot do.
 func (es *ExecSession) ResizePty(rows, cols int) error {
+	if es.session == nil {
+		return fmt.Errorf("this transport carries no session channel")
+	}
 	return es.session.WindowChange(rows, cols)
 }
 
@@ -299,6 +311,9 @@ func (es *ExecSession) WriteStdin(data []byte) (int, error) {
 
 // Signal sends a signal to the remote process.
 func (es *ExecSession) Signal(sig ssh.Signal) error {
+	if es.session == nil {
+		return fmt.Errorf("this transport carries no session channel")
+	}
 	return es.session.Signal(sig)
 }
 
@@ -306,6 +321,9 @@ func (es *ExecSession) Signal(sig ssh.Signal) error {
 func (es *ExecSession) closeStdin() {
 	es.stdinMu.Lock()
 	defer es.stdinMu.Unlock()
+	if es.Stdin == nil {
+		return
+	}
 	_ = es.Stdin.Close()
 }
 
@@ -316,8 +334,10 @@ func (es *ExecSession) SSHClient() *ssh.Client { return es.client }
 func (es *ExecSession) Close() error {
 	es.closeStdin()
 	var firstErr error
-	if err := es.session.Close(); err != nil {
-		firstErr = err
+	if es.session != nil {
+		if err := es.session.Close(); err != nil {
+			firstErr = err
+		}
 	}
 	if es.ownClient {
 		if err := es.client.Close(); err != nil && firstErr == nil {
@@ -332,6 +352,9 @@ func (es *ExecSession) Close() error {
 // CloseSessionOnly closes this session channel without touching the shared SSH client.
 func (es *ExecSession) CloseSessionOnly() error {
 	es.closeStdin()
+	if es.session == nil {
+		return nil
+	}
 	return es.session.Close()
 }
 

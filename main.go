@@ -102,6 +102,8 @@ func main() {
 	flag.BoolVar(&showVersion, "version", false, "Print version, commit, and build date, then exit")
 	var idleTimeoutArg string
 	flag.StringVar(&idleTimeoutArg, "idle-timeout", "", "How long a daemon instance may stay fully idle before it exits on its own (e.g. 10m; 0 disables). Defaults: 30s for termcp daemon stdio, none for termcp daemon start. Only meaningful when a daemon instance is launched.")
+	var bridgeNamespace string
+	flag.StringVar(&bridgeNamespace, "namespace", "", "stdio bridge: claim a caller namespace (letters/digits/-_. up to 64). Empty = the instance owner's view.")
 	flag.Usage = usage
 	// The subcommand leads the command line and is picked off before flag
 	// parsing, which stops at the first positional argument.
@@ -275,7 +277,7 @@ func main() {
 	}
 
 	if ensure || bridging {
-		runDaemonFront(cfg, ensure, bridging, idleTimeoutArg, idleTimeout, target)
+		runDaemonFront(cfg, ensure, bridging, idleTimeoutArg, idleTimeout, target, bridgeNamespace)
 		return
 	}
 	runServer(cfg, idleTimeoutArg, idleTimeout, isDaemonChild)

@@ -10,7 +10,7 @@
 数据根目录按 `--data-dir`、`TERMCP_DATA_DIR`、`~/.termcp` 的顺序解析。
 下面是旧版代码会创建的文件类型，也是迁移的盘点范围；不是对用户实际配置或历史内容的扫描。
 
-### 固定持久化路径：9 种
+### 固定持久化路径：10 种
 
 路径均相对数据根目录，按功能使用情况创建，并非每次启动都会全部出现。
 
@@ -24,7 +24,10 @@
 | `sessions/<session_id>/<shell_id>/log.jsonl` | 时间、字节偏移、输出/输入来源和审批标记；没有正文 | `0644` | 建议加密，保护活动时间和操作规律 |
 | `sessions/<session_id>/<shell_id>/log.lines` | 换行位置的二进制偏移索引 | `0644` | 建议随历史一起加密 |
 | `sessions/<session_id>/<shell_id>/log.stdio` | stdout/stderr 来源切换的二进制偏移索引 | `0644` | 建议随历史一起加密 |
+| `extensions/<name>/config.toml` | 扩展模板的目标、命令、路径和 HTTP 认证头 | `0600` | 整体加密为同目录 `config.enc`，旧模板纳入迁移 |
 | `termcp.log` | daemon 的 stdout/stderr，包括运行诊断、错误以及 debug 级 MCP 参数和返回预览 | `0600` | 先减少和脱敏记录；需要保留敏感诊断时加密保存 |
+
+扩展模板每个名称占一个配置文件；加密运行时只读写 `config.enc`，不回退读取旧 TOML。模板迁移保留未知字段，已有加密存储的新增旧模板采用追加迁移，保持主机配置与历史。扩展协调器在解锁和迁移后启动，关闭时先停止协调器，再关闭会话和存储。
 
 通常一个会话有 1 个会话 manifest，每个 shell 最多有 5 个文件；每个持久主机有 1 个配置文件。
 daemon 日志另占 1 个文件，内置配置覆盖文件按需生成。
@@ -39,12 +42,13 @@ daemon 日志另占 1 个文件，内置配置覆盖文件按需生成。
 [`输入记录`](../../internal/session/input.go)、[`MCP 日志`](../../internal/mcp/logging.go)、
 [`daemon 日志`](../../internal/daemon/spawn.go)。
 
-### 临时文件：5 类
+### 临时文件：6 类
 
 | 路径或模式 | 内容与生命周期 | 处理原则 |
 | --- | --- | --- |
 | 数据根目录下 `.write-probe` | 空的写权限探针，正常启动流程立即删除 | 无需加密 |
 | 会话/shell 目录下 `.tmp-*` | manifest 原子替换的完整副本，成功后改名；崩溃可能遗留 | 必须从第一次写入起就是密文 |
+| 扩展模板目录下 `.tmp-ext-*` | 旧版模板的原子替换副本，可能包含认证头 | 纳入加密备份与明文清理，新写入使用密文临时文件 |
 | SSH 配置目录下 `.tmp-cfg-*` | 配置原子替换副本，成功后改名；异常可能遗留 | 与最终配置使用相同的加密要求 |
 | 系统临时目录下 `termcp-known_hosts-*` | 主机公钥与地址，解析后删除 | 公钥不需要保密；限制权限、及时清理，避免泄漏主机清单 |
 | 系统临时目录下 `multipart-*` | 大 multipart 上传可能由 Go 标准库暂存文件内容；普通 HTTP 请求结束会清理 | 内容敏感性与上传文件相同；优先使用不经明文临时文件的流式上传 |
@@ -71,6 +75,7 @@ daemon 日志另占 1 个文件，内置配置覆盖文件按需生成。
   store.enc
   keys/master.key
   config/hosts.enc
+  extensions/<name>/config.enc           # 按模板身份认证的原始 TOML
   sessions/<session_id>/
     meta.enc
     <shell_id>/

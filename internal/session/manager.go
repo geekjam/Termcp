@@ -48,7 +48,7 @@ type Manager struct {
 	onOutputHook func(shellID string)
 	onExitHook   func(shellID string, exitCode *int)
 	onCloseHook  func(shellID string)
-	onDeadHook   func(sessionID string)
+	onDeadHooks  []func(sessionID string)
 }
 
 // NewManager creates a Manager. internalSSH must be the built-in sshserver.Server (after Start) when using internal profiles; may be nil if only remote sessions are used in tests.
@@ -262,11 +262,17 @@ func (m *Manager) RenameSSHConfig(fromName, toName string) {
 // open cards keep rendering the old state until something else happens to
 // refresh them (the lock would appear not to have worked).
 func (m *Manager) EnableApproval(id string, need int, timeout time.Duration) error {
+	return m.EnableApprovalScoped(id, need, timeout, nil)
+}
+
+// EnableApprovalScoped is EnableApproval with an explicit set of gated kinds
+// (see Session.EnableApprovalScoped). Nil scopes gate everything.
+func (m *Manager) EnableApprovalScoped(id string, need int, timeout time.Duration, scopes []approval.Kind) error {
 	s := m.Get(id)
 	if s == nil {
 		return fmt.Errorf("session %q not found", id)
 	}
-	if err := s.EnableApproval(need, timeout); err != nil {
+	if err := s.EnableApprovalScoped(need, timeout, scopes); err != nil {
 		return err
 	}
 	s.mu.Lock()

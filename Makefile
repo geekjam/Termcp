@@ -88,6 +88,7 @@ prepare-release:
 
 check-release:
 	python3 scripts/release_metadata.py check $(if $(RELEASE_VERSION),--expected "$(RELEASE_VERSION)")
+	python3 -m unittest discover -s scripts -p '*_test.py'
 
 # 清理构建文件
 clean:

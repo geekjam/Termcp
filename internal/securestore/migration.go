@@ -52,6 +52,9 @@ func managedLegacy(path string) bool {
 	if len(parts) == 3 && parts[0] == "ssh_configs" {
 		return parts[2] == "config.toml" || strings.HasPrefix(parts[2], ".tmp-cfg-")
 	}
+	if len(parts) == 3 && parts[0] == "extensions" {
+		return parts[2] == "config.toml" || strings.HasPrefix(parts[2], ".tmp-ext-")
+	}
 	if parts[0] == "sessions" && (len(parts) == 3 || len(parts) == 4) {
 		name := parts[len(parts)-1]
 		if strings.HasSuffix(name, ".enc") || strings.HasPrefix(name, ".tmp-enc-") || strings.HasPrefix(name, ".tmp-migrate-") {
@@ -64,7 +67,7 @@ func managedLegacy(path string) bool {
 
 func detectLegacy(root string) (bool, error) {
 	found := false
-	for _, tree := range []string{"sessions", "ssh_configs"} {
+	for _, tree := range []string{"sessions", "ssh_configs", "extensions"} {
 		base := filepath.Join(root, tree)
 		err := filepath.WalkDir(base, func(path string, entry fs.DirEntry, err error) error {
 			if errors.Is(err, os.ErrNotExist) && path == base {
@@ -119,7 +122,7 @@ func fingerprint(path string, limit int64) ([]byte, int64, error) {
 
 func inventory(ctx context.Context, root string) ([]source, error) {
 	var out []source
-	for _, tree := range []string{"ssh_configs", "sessions"} {
+	for _, tree := range []string{"ssh_configs", "sessions", "extensions"} {
 		base := filepath.Join(root, tree)
 		err := filepath.WalkDir(base, func(path string, entry fs.DirEntry, err error) error {
 			if errors.Is(err, os.ErrNotExist) && path == base {
@@ -223,10 +226,36 @@ func Prepare(ctx context.Context, root string, keys *encryptedfs.KeyManager, rep
 	err := readDocument(root, "store.enc", keys, &plan)
 	if err == nil {
 		if plan.Clean {
-			return false, nil
+			// A store encrypted before extension support may still have the
+			// templates introduced by dev. Migrate those additively, preserving
+			// existing encrypted hosts and sessions.
+			found := false
+			base := filepath.Join(root, "extensions")
+			walkErr := filepath.WalkDir(base, func(path string, entry fs.DirEntry, err error) error {
+				if errors.Is(err, os.ErrNotExist) && path == base {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(root, path)
+				if err != nil {
+					return err
+				}
+				if !entry.IsDir() && managedLegacy(filepath.ToSlash(rel)) {
+					found = true
+					return fs.SkipAll
+				}
+				return nil
+			})
+			if walkErr != nil || !found {
+				return false, walkErr
+			}
+			err = os.ErrNotExist
+		} else {
+			report(Progress{Stage: "cleanup", Total: len(plan.Sources), Resuming: true})
+			return cleanup(ctx, root, keys, &plan)
 		}
-		report(Progress{Stage: "cleanup", Total: len(plan.Sources), Resuming: true})
-		return cleanup(ctx, root, keys, &plan)
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return false, err
@@ -508,7 +537,9 @@ func cleanup(ctx context.Context, root string, keys *encryptedfs.KeyManager, pla
 				return true, err
 			}
 		}
-		if len(parts) == 3 && parts[0] == "ssh_configs" && parts[2] == "config.toml" && parts[1] != "internal" && (!strings.HasPrefix(parts[1], ".") || parts[1] == ".internal") {
+		profile := len(parts) == 3 && parts[0] == "ssh_configs" && parts[2] == "config.toml" && parts[1] != "internal" && (!strings.HasPrefix(parts[1], ".") || parts[1] == ".internal")
+		template := len(parts) == 3 && parts[0] == "extensions" && parts[2] == "config.toml" && !strings.HasPrefix(parts[1], ".")
+		if profile || template {
 			// hosts.enc preserves the exact raw configuration. Retiring this
 			// temporary backup avoids retaining deleted credentials separately.
 			path := filepath.Join(root, filepath.FromSlash(archivePath(plan.ID, entry.Path)))

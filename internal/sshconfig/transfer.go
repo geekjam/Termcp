@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/open-mcp-ai/termcp/internal/configcrypt"
 	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -25,7 +26,9 @@ var (
 
 // IsEncryptedBatch recognizes the portable export envelope, independent of file
 // extensions, the local data master key, and the local key provider.
-func IsEncryptedBatch(data []byte) bool { return bytes.HasPrefix(data, transferMagic) }
+func IsEncryptedBatch(data []byte) bool {
+	return bytes.HasPrefix(data, transferMagic) || configcrypt.IsEncrypted(data)
+}
 
 // ExportBatchWithPassword preserves the legacy TOML bytes when password is empty.
 // Protected exports use a fresh salt and nonce and never write temporary files.
@@ -81,6 +84,26 @@ func encryptBatch(data, password []byte, cost encryptedfs.Argon2Parameters) ([]b
 // The returned plaintext is owned by the caller. Header lengths and KDF bounds
 // are checked before allocating plaintext or running the password KDF.
 func DecryptBatch(data, password []byte) ([]byte, error) {
+	if configcrypt.IsEncrypted(data) {
+		if len(data) > MaxTransferSize*2 {
+			return nil, ErrTransferFormat
+		}
+		if len(password) == 0 {
+			return nil, ErrTransferPasswordRequired
+		}
+		if len(password) > 16<<10 {
+			return nil, ErrTransferAuthentication
+		}
+		plain, err := configcrypt.Decrypt(data, string(password))
+		if err != nil {
+			return nil, ErrTransferAuthentication
+		}
+		if len(plain) > maxBatchSize {
+			clear(plain)
+			return nil, ErrTransferFormat
+		}
+		return plain, nil
+	}
 	if !IsEncryptedBatch(data) {
 		if len(data) > maxBatchSize {
 			return nil, ErrTransferFormat

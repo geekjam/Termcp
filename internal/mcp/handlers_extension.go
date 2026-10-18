@@ -1,0 +1,332 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"time"
+
+	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/open-mcp-ai/termcp/internal/extensions"
+)
+
+// extensionActions is the action enum the extension tool dispatches on. It is
+// restated here rather than derived from the reconciler because the tool's
+// surface is a decision about what an agent may do, not about what the
+// reconciler can do.
+var extensionActions = []string{"list", "get", "create", "update", "delete", "retry"}
+
+// extensionToolDescription is the extension surface in one paragraph. The tool
+// is the only place an agent hears about extensions, so it has to carry both
+// halves: what the layer is, and how a listed extension is actually driven.
+const extensionToolDescription = `Extensions: named, pinned sessions whose capabilities are trimmed to what their template allows — an MCP server driven over a pipe shell, a read-only window onto remote files, or an interactive terminal with instructions attached. Every enabled extension on a host shares one connection with the others that were granted the same capabilities, each driving its own shell_id in it.
+
+action=list returns every extension with its status and, when available, the session_id/shell_id you drive it through — several extensions can report the same session_id, so address work by shell_id. action=get returns one template in full, including the notes that are its operating instructions: read them before first use, they are the extension's own documentation. create and update author templates: kind + target is enough to start, every other field is an override, an omitted field keeps its stored value and an empty array clears it. An MCP template names either command/args (a stdio server to run) or url (an HTTP endpoint to relay, with headers) — the two are alternatives. delete removes a template (and the connection it kept warm, when nothing else is left on it). retry asks termcp to reconnect an unavailable extension now instead of waiting out its backoff.
+
+An available extension is an ordinary session: call shell_input/shell_output (or file_read/file_stat) against its handles. A call the template did not whitelist is genuinely refused — the refusal is the template doing its job, not a bug. Extension sessions are infrastructure: they are not listed by session_list and stay warm for reuse, so never terminate or delete them. If one has died, it reports unavailable and is restarted — wait for it, then take the new handle from action=list.`
+
+// extensionForwardItems is the items schema for the forwards array. mcp-go has
+// no array-of-object helper, so the property built by WithArray is widened here;
+// the shape mirrors ForwardDecl field for field.
+func extensionForwardItems() mcpgo.ToolOption {
+	return func(t *mcpgo.Tool) {
+		prop, ok := t.InputSchema.Properties["forwards"].(map[string]any)
+		if !ok {
+			return
+		}
+		prop["items"] = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"kind":        map[string]any{"type": "string", "enum": []string{"dynamic", "local", "remote"}},
+				"local_host":  map[string]any{"type": "string"},
+				"local_port":  map[string]any{"type": "integer", "description": "dynamic/local: termcp's listen port, 0 = picked at runtime. remote: the target's listen port"},
+				"remote_host": map[string]any{"type": "string", "description": "local: host the target dials (default localhost). remote: required"},
+				"remote_port": map[string]any{"type": "integer", "description": "local/remote: the port a connection is carried to"},
+			},
+			"additionalProperties": false,
+		}
+	}
+}
+
+// handleExtensionOps is the whole extension surface in one tool, after the
+// ssh_config pattern: an agent lists, reads one template's detail (including
+// the notes that are its operating instructions), authors and edits templates,
+// and nudges a stuck one back onto its feet. The sessions themselves are
+// ordinary sessions — this tool never opens one, it only hands out the
+// reconciler's handles.
+func (s *Server) handleExtensionOps(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if s.extensions == nil {
+		return toolError(CodeNotConfigured, "%s", "extensions are not configured on this termcp"), nil
+	}
+	args := request.GetArguments()
+	switch getString(args, "action", "") {
+	case "list":
+		return s.handleExtensionList(ctx, request)
+	case "get":
+		return s.handleExtensionGet(ctx, request)
+	case "create":
+		return s.handleExtensionCreate(ctx, request)
+	case "update":
+		return s.handleExtensionUpdate(ctx, request)
+	case "delete":
+		return s.handleExtensionDelete(ctx, request)
+	case "retry":
+		return s.handleExtensionRetry(ctx, request)
+	default:
+		return toolError(CodeInvalidArgument, "action must be one of %s", strings.Join(extensionActions, ", ")), nil
+	}
+}
+
+// handleExtensionList is the discovery call: every extension, its status, and
+// the handles an available one is driven through. Notes are deliberately absent
+// — they can be long, and an agent that wants them reads them with get.
+func (s *Server) handleExtensionList(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	names, err := s.extensions.Store().List()
+	if err != nil {
+		return toolError(CodeOperationFailed, "listing extensions: %s", err), nil
+	}
+	out := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		ext, err := s.extensions.Store().Load(name)
+		st, _ := s.extensions.Status(name)
+		entry := map[string]any{"name": name}
+		if err == nil {
+			entry["name"] = ext.Name
+			entry["kind"] = ext.Kind
+			entry["target"] = ext.Target
+			entry["description"] = ext.Description
+			entry["enabled"] = ext.IsEnabled()
+		}
+		// A file that no longer parses is still listed, with the failure the
+		// reconciler recorded on it: the status explains the rest.
+		extensionRuntimeFields(entry, st, false)
+		out = append(out, entry)
+	}
+	b, err := json.Marshal(map[string]any{"extensions": out})
+	if err != nil {
+		return toolError(CodeInternalError, "encoding extension list: %s", err), nil
+	}
+	return mcpgo.NewToolResultText(string(b)), nil
+}
+
+// handleExtensionGet returns one template in full: the session shape, the
+// capability whitelist, the declared forwards, the failure history, and the
+// notes an available extension is meant to be driven by.
+func (s *Server) handleExtensionGet(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	args := request.GetArguments()
+	name := strings.TrimSpace(getString(args, "name", ""))
+	if name == "" {
+		return toolError(CodeInvalidArgument, "%s", "name is required"), nil
+	}
+	ext, err := s.extensions.Store().Load(name)
+	if err != nil {
+		return toolError(CodeRuleNotFound, "extension %q not found", name), nil
+	}
+	entry := extensionConfigMap(ext)
+	st, _ := s.extensions.Status(name)
+	extensionRuntimeFields(entry, st, true)
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return toolError(CodeInternalError, "encoding extension: %s", err), nil
+	}
+	return mcpgo.NewToolResultText(string(b)), nil
+}
+
+// handleExtensionCreate stores a new template. Fields an author leaves out are
+// filled from the kind's preset, so kind + target is enough for a working
+// extension and everything else is an override.
+func (s *Server) handleExtensionCreate(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	args := request.GetArguments()
+	name := strings.TrimSpace(getString(args, "name", ""))
+	if name == "" {
+		return toolError(CodeInvalidArgument, "%s", "name is required"), nil
+	}
+	// A name whose template still loads is a conflict. One whose template no longer
+	// loads is not: create overwrites it, which is the documented way out of a
+	// broken file (see Store.NameState), and a name that cannot be stored at all
+	// falls through to the save's own validation.
+	if taken, loadable := s.extensions.Store().NameState(name); taken && loadable {
+		return toolError(CodeConflict, "extension %q already exists; use action=update to change it", name), nil
+	}
+	ext := extensions.Preset(getString(args, "kind", extensions.KindCustom))
+	ext.Name = name
+	if err := extensions.ApplyArgs(&ext, args, false); err != nil {
+		return extensionSaveError(err), nil
+	}
+	if err := extensions.SaveTemplate(s.extensions.Store(), &ext); err != nil {
+		return extensionSaveError(err), nil
+	}
+	return extensionSaved(s, &ext)
+}
+
+// handleExtensionUpdate patches a stored template. An omitted field keeps its
+// stored value; a field that is present but empty clears it. That distinction
+// is what makes "trim the path list" and "leave the path list alone" both
+// expressible in one call.
+func (s *Server) handleExtensionUpdate(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	args := request.GetArguments()
+	name := strings.TrimSpace(getString(args, "name", ""))
+	if name == "" {
+		return toolError(CodeInvalidArgument, "%s", "name is required"), nil
+	}
+	ext, err := s.extensions.Store().Load(name)
+	if err != nil {
+		return toolError(CodeRuleNotFound, "extension %q not found", name), nil
+	}
+	if err := extensions.ApplyArgs(ext, args, true); err != nil {
+		return extensionSaveError(err), nil
+	}
+	if err := extensions.SaveTemplate(s.extensions.Store(), ext); err != nil {
+		return extensionSaveError(err), nil
+	}
+	return extensionSaved(s, ext)
+}
+
+// handleExtensionDelete removes a template and, with it, the session the
+// reconciler kept warm for it.
+func (s *Server) handleExtensionDelete(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	args := request.GetArguments()
+	name := strings.TrimSpace(getString(args, "name", ""))
+	if name == "" {
+		return toolError(CodeInvalidArgument, "%s", "name is required"), nil
+	}
+	if _, err := s.extensions.Store().Load(name); err != nil {
+		return toolError(CodeRuleNotFound, "extension %q not found", name), nil
+	}
+	if err := s.extensions.Store().Delete(name); err != nil {
+		return toolError(CodeOperationFailed, "deleting extension %q: %s", name, err), nil
+	}
+	return successResult(), nil
+}
+
+// handleExtensionRetry asks the reconciler to bring an extension up now rather
+// than waiting out its backoff. Both an agent and a human can reach for it, so
+// a stuck extension is one call away from being re-probed.
+func (s *Server) handleExtensionRetry(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	args := request.GetArguments()
+	name := strings.TrimSpace(getString(args, "name", ""))
+	if name == "" {
+		return toolError(CodeInvalidArgument, "%s", "name is required"), nil
+	}
+	if _, err := s.extensions.Store().Load(name); err != nil {
+		return toolError(CodeRuleNotFound, "extension %q not found", name), nil
+	}
+	if err := s.extensions.Retry(name); err != nil {
+		return toolError(CodeOperationFailed, "retrying extension %q: %s", name, err), nil
+	}
+	return successResult(), nil
+}
+
+/* The authoring layer — ApplyArgs, SaveTemplate, ParseForwardDecls — lives in
+   internal/extensions now, so the WebUI's create/update routes apply an author's
+   arguments through the same code this tool does. A rule for what makes a
+   template valid therefore has one home and two callers. */
+
+func extensionSaveError(err error) *mcpgo.CallToolResult {
+	return toolError(CodeInvalidArgument, "extension not saved: %s", err)
+}
+
+func extensionSaved(s *Server, ext *extensions.Extension) (*mcpgo.CallToolResult, error) {
+	// The store's own change subscription triggers the reconciler, so the
+	// session is coming up; the returned template is what was persisted.
+	st, _ := s.extensions.Status(ext.Name)
+	entry := extensionConfigMap(ext)
+	entry["status"] = statusOr(st, extensions.StatusUnavailable)
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return toolError(CodeInternalError, "encoding extension: %s", err), nil
+	}
+	return mcpgo.NewToolResultText(string(b)), nil
+}
+
+// extensionConfigMap renders a template with the same key names the tool's
+// arguments use, so what an agent reads from get is what it would send to
+// update.
+func extensionConfigMap(ext *extensions.Extension) map[string]any {
+	entry := map[string]any{
+		"name":        ext.Name,
+		"kind":        ext.Kind,
+		"target":      ext.Target,
+		"description": ext.Description,
+		"enabled":     ext.IsEnabled(),
+		"mode":        ext.Mode,
+		"command":     ext.Command,
+		"allow":       ext.Allow,
+		"paths":       ext.Paths,
+		"notes":       ext.Notes,
+	}
+	if ext.URL != "" {
+		entry["url"] = ext.URL
+	}
+	if len(ext.Headers) > 0 {
+		entry["headers"] = ext.Headers
+	}
+	if len(ext.Args) > 0 {
+		entry["args"] = ext.Args
+	}
+	if ext.Rows > 0 {
+		entry["rows"] = ext.Rows
+	}
+	if ext.Cols > 0 {
+		entry["cols"] = ext.Cols
+	}
+	if len(ext.Forwards) > 0 {
+		entry["forwards"] = ext.Forwards
+	}
+	return entry
+}
+
+// extensionRuntimeFields writes the reconciler's half of an extension onto a
+// result entry: the status, the handles an available extension is driven
+// through, the tunnels it declared, and how long until the next automatic
+// attempt. The list and get surfaces differ only in how much of the failure
+// history they carry — the list keeps the latest reason, get keeps the history —
+// so everything they share is written once, here.
+func extensionRuntimeFields(entry map[string]any, st extensions.Status, withHistory bool) {
+	entry["status"] = statusOr(st, extensions.StatusUnavailable)
+	if st.SessionID != "" {
+		entry["session_id"] = st.SessionID
+	}
+	if st.ShellID != "" {
+		entry["shell_id"] = st.ShellID
+	}
+	if len(st.Forwards) > 0 {
+		entry["forwards"] = st.Forwards
+	}
+	if n := len(st.Failures); n > 0 {
+		switch {
+		case withHistory:
+			entry["failures"] = st.Failures
+			entry["next_retry"] = retryIn(st.NextRetry)
+		case st.Status != extensions.StatusAvailable:
+			// The list carries the reason an extension is down, not a repair it has
+			// already made: an old exit code beside an available status reads as a
+			// current fault. The history is one action=get away.
+			entry["last_failure"] = st.Failures[n-1]
+			entry["next_retry"] = retryIn(st.NextRetry)
+		}
+	}
+}
+
+func statusOr(st extensions.Status, def string) string {
+	if st.Status == "" {
+		return def
+	}
+	return st.Status
+}
+
+// retryIn renders when the reconciler will try again in the terms a reader can
+// act on: a duration, "now" once the window has elapsed, and — for a zero — the
+// fact that nothing is scheduled. Zero means the automatic budget is spent, not
+// "immediately", and saying nothing would leave an agent polling a host that is
+// not being retried, so the key names the way out.
+func retryIn(nextRetryMs int64) string {
+	if nextRetryMs <= 0 {
+		return "none scheduled; use action=retry to try again"
+	}
+	if d := time.Until(time.UnixMilli(nextRetryMs)); d > 0 {
+		return "in " + d.Round(time.Second).String()
+	}
+	return "now"
+}

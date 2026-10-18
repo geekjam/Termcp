@@ -172,6 +172,12 @@ func (h *Handler) batchSessionResults(rawIDs string, op func(id string) error) [
 // 204, and one bad entry does not stop the rest. A single id is unchanged.
 func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// A restriction refuses the batch wholesale when any entry is restricted, the
+	// same rule the MCP guard documents: a partial refusal would look like a
+	// partial success, and closing some of what was asked reads as done.
+	if h.restRefuseSessionIDs(w, id, "session_terminate") {
+		return
+	}
 	if strings.Contains(id, ",") {
 		results := h.batchSessionResults(id, func(sid string) error {
 			h.Sessions.Terminate(sid, true, 0)
@@ -198,6 +204,9 @@ func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 // others. A single id is unchanged (204 or 404).
 func (h *Handler) handlePurgeSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if h.restRefuseSessionIDs(w, id, "session_delete") {
+		return
+	}
 	if strings.Contains(id, ",") {
 		results := h.batchSessionResults(id, h.Sessions.Delete)
 		writeJSON(w, http.StatusOK, map[string]any{"results": results})

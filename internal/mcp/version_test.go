@@ -76,6 +76,47 @@ func TestInstructionsDoNotMentionRemovedTools(t *testing.T) {
 	}
 }
 
+// releaseHeading matches a final release heading in CHANGELOG.md. The date is
+// part of the pattern on purpose: without it, `\b` after the patch number
+// matches inside `## v0.2.8-rc.1 — ...` and the rc heading is read as 0.2.8.
+var releaseHeading = regexp.MustCompile(`^## v(\d+\.\d+\.\d+) — \d{4}-\d{2}-\d{2}\s*$`)
+
+// newestFinalRelease returns the first final release heading, skipping
+// pre-releases (`## vX.Y.Z-rc.N`), which never move server.json.
+func newestFinalRelease(changelog string) string {
+	for _, line := range strings.Split(changelog, "\n") {
+		if m := releaseHeading.FindStringSubmatch(line); m != nil {
+			return m[1]
+		}
+	}
+	return ""
+}
+
+// TestNewestFinalReleaseSkipsPreReleases pins the rc rule itself. Reverting the
+// heading pattern to a bare `\d+\.\d+\.\d+\b` makes this test fail on the
+// first case, which is how the disagreement with release_metadata.py came back
+// the last time.
+func TestNewestFinalReleaseSkipsPreReleases(t *testing.T) {
+	const rcOnTop = "# Changelog\n\n## Unreleased\n\n## v0.2.8-rc.1 — 2026-10-15\n\n- note\n\n## v0.2.7 — 2026-10-09\n\n- note\n"
+	tests := []struct {
+		name      string
+		changelog string
+		want      string
+	}{
+		{"an rc on top does not become the manifest version", rcOnTop, "0.2.7"},
+		{"a final release on top is the manifest version", strings.Replace(rcOnTop, "## v0.2.8-rc.1", "## v0.2.8", 1), "0.2.8"},
+		{"an rc with no date is not a heading at all", "## v0.2.8-rc.1\n", ""},
+		{"a heading with no date is not a release", "## v0.2.8\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := newestFinalRelease(tt.changelog); got != tt.want {
+				t.Errorf("newestFinalRelease() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestServerJSONMatchesChangelog keeps the MCP Registry manifest in step with
 // the release the changelog announces. Every other trace of the version is
 // derived (ldflags, the module version, /api/version), but server.json is a
@@ -85,11 +126,22 @@ func TestInstructionsDoNotMentionRemovedTools(t *testing.T) {
 // closes that gap; it lives here because `go test ./internal/...` is what CI
 // actually runs.
 //
-// The heading compared against is the newest release in the changelog, which is
-// the version server.json must name. It is not necessarily the build under
-// development: bumping the heading is part of cutting a release here, so the
-// first `## vX.Y.Z` is the release being prepared or just shipped, and a commit
-// after it (an unreleased fix) does not change what the manifest must say.
+// The heading compared against is the newest FINAL release in the changelog,
+// which is the version server.json must name. It is not necessarily the build
+// under development: bumping the heading is part of cutting a release here, so
+// the first `## vX.Y.Z` is the release being prepared or just shipped, and a
+// commit after it (an unreleased fix) does not change what the manifest must
+// say.
+//
+// An `## vX.Y.Z-rc.N` heading is an internal test build and must NOT move
+// server.json - a pre-release is published to nobody (no registry entry, no
+// `latest` move), so the manifest keeps naming the newest final release while
+// an rc is being cut. Matching the heading with `\b` after the patch number
+// would make this test read `v0.2.8-rc.1` as `0.2.8` and demand exactly the
+// bump an rc is forbidden to make, while scripts/release_metadata.py (which
+// pins the whole heading) would call the same file correct - two guards,
+// opposite verdicts on one changelog. The rc suffix is therefore matched
+// explicitly and skipped.
 func TestServerJSONMatchesChangelog(t *testing.T) {
 	changelog, err := os.ReadFile("../../CHANGELOG.md")
 	if err != nil {
@@ -99,17 +151,10 @@ func TestServerJSONMatchesChangelog(t *testing.T) {
 		// the same reason.
 		t.Skipf("read CHANGELOG.md: %v", err)
 	}
-	// The newest `## vX.Y.Z` heading is the release server.json must name.
-	heading := regexp.MustCompile(`^## v(\d+\.\d+\.\d+)\b`)
-	var version string
-	for _, line := range strings.Split(string(changelog), "\n") {
-		if m := heading.FindStringSubmatch(line); m != nil {
-			version = m[1]
-			break
-		}
-	}
+	// The newest final release heading is the version server.json must name.
+	version := newestFinalRelease(string(changelog))
 	if version == "" {
-		t.Fatal("CHANGELOG.md has no '## vX.Y.Z' release heading")
+		t.Fatal("CHANGELOG.md has no '## vX.Y.Z — YYYY-MM-DD' release heading")
 	}
 
 	raw, err := os.ReadFile("../../server.json")

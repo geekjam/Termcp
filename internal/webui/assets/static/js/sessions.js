@@ -11,6 +11,28 @@ var _sessionRegions = [
  *  archive rather than dropping it. */
 function isDeadSession(s) { return !(s && s.status === 'running'); }
 
+/** Sessions a subsystem keeps for itself stay off both plates.
+ *
+ *  The extension layer holds one connection per host and serves its extensions
+ *  through channels in it; that session is termcp's own infrastructure rather
+ *  than something the user asked for, so it is reported in the extension column
+ *  and nowhere else. The record carries the namespace, which is what makes the
+ *  hiding survive a restart: a client-side list of ids would not.
+ *
+ *  A caller's namespace (ns:...) is NOT hidden: those are ordinary sessions an
+ *  agent asked for, and the person looking at this page is the one who owns the
+ *  instance. The tag is shown on the card instead, so it is visible whose work a
+ *  session is. */
+function isHiddenSession(s) { return !!(s && s.namespace && s.namespace.indexOf('ext') === 0); }
+
+/** The namespace an agent claimed when it started a session, or '' for an
+ *  ordinary one. Shown as a chip so two agents' sessions are told apart without
+ *  opening either. */
+function sessionClientName(s) {
+  var n = (s && s.namespace) || '';
+  return n.indexOf('ns:') === 0 ? n.slice(3) : '';
+}
+
 /* ---- sessions still being dialled ----
  *
  * A connect that is still in progress has no session yet: the server registers
@@ -63,10 +85,14 @@ function pendingSessionRecords() {
 }
 
 /** The list every plate reads: the server's snapshot plus the dials the server
- *  cannot know about yet. One place composes them, so the running plate, both
- *  regions' membership, and pruning all see the same list. */
+ *  cannot know about yet, minus the sessions a subsystem owns. One place composes
+ *  them, so the running plate, the archive, both regions' membership and pruning
+ *  all see the same list — a hidden session that only the renderer skipped would
+ *  still be counted by "select all" and ticked by the batch bar. */
 function sessionsWithPending() {
-  return (window._lastSessionsSnapshot || []).concat(pendingSessionRecords());
+  return (window._lastSessionsSnapshot || []).filter(function (s) {
+    return !isHiddenSession(s);
+  }).concat(pendingSessionRecords());
 }
 
 /** Stop a dial in progress. This is the batch form of the placeholder window's
@@ -273,12 +299,22 @@ function renderTileGrid(region, all) {
        status word in place of an id that does not exist). The elements are kept
        rather than dropped so the two cards stay the same shape — the CSS grid
        that places them then needs no second variant. */
+    /* Which agent started this session, when one claimed a namespace. The tag
+       is what makes two agents' sessions tellable apart on the plate without
+       opening either — the isolation itself is server-side (session_list only
+       returns the caller's own), so this chip is the operator's view of it. */
+    var clientName = pending ? '' : sessionClientName(s);
+    var clientHtml = clientName
+      ? '<span class="sess-client" title="' + escapeHtml(t('session.client.tip', { name: clientName })) + '">' + escapeHtml(clientName) + '</span>'
+      : '';
+
     var nameRowHtml =
       '<div class="sess-name-row">' +
       '<input type="checkbox" class="sess-checkbox" title="Select session" data-i18n-title="session.aria.select" aria-label="Select session" data-i18n-aria="session.aria.select"' + (isSelected ? ' checked' : '') + '>' +
       (pending
         ? '<div class="sess-entry-line">' + escapeHtml(entryLine) + '</div>'
         : '<div class="sess-entry-line" role="button" tabindex="0" title="Rename session" data-i18n-title="session.aria.rename" aria-label="Rename session" data-i18n-aria="session.aria.rename">' + escapeHtml(entryLine) + '</div>') +
+      clientHtml +
       '</div>';
     /* The lamp sits in the meta row, immediately before the sid: that row is the
        line that reads "what state is this session in". A connecting card swaps
@@ -631,7 +667,7 @@ function applySessionsSnapshot(sessions) {
     // Approval mode is part of the session snapshot, so an open window reflects a
     // switch flipped in another tab without needing its own request.
     w._approvalNeed = s.approval_need || 1;
-    applyApprovalMode(w, !!s.approval_mode);
+    applyApprovalMode(w, !!s.approval_mode, s.approval_scopes);
   }
   // Prune invisible client-side state for sessions that have left the
   // server registry entirely, even if no window was open when they died.

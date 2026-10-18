@@ -34,6 +34,25 @@ MCP resources, and a `learn-api` prompt:
 
 两个文档端点在开启鉴权后仍可**无凭据**获取（仅 GET/HEAD，纯静态、无数据）；其余所有面（REST/MCP/WS/Web UI）依旧要求 token。
 
+## 调用方命名空间（namespace）
+
+多个 agent 共用一个实例时，默认它们看到的是同一批会话（全局单例），于是两个 agent 很容易互相碰到对方的终端。给 MCP 请求加一个请求头即可把调用方圈进自己的命名空间：
+
+```
+X-Termcp-Namespace: alice
+```
+
+| 行为 | 未声明（默认） | 声明了 `alice` |
+|------|----------------|----------------|
+| `session_list` | 所有非基础设施会话 | 只有 `alice` 自己开的会话 |
+| `session_start` | 普通会话 | 会话打上 `ns:alice` 标记（随 manifest 持久化） |
+| 按 id 操作（`shell_input` 等） | 任何会话（含扩展会话，只要手里有 id） | **只有 `ns:alice`**，否则 `forbidden` |
+| 扩展/基础设施会话 | 可（持有 handle 时） | 拒绝 |
+
+未声明命名空间的调用方是**实例所有者**（浏览器、stdio 桥、没设头的 agent），不是租户：它保持今天的行为（基础设施会话不进 `session_list`，但已有 id 仍可用，这正是扩展文档承诺的）。这个特性解决的是“两个 agent 互相冲突”，而不是“向所有者隐藏 agent”。
+
+名字限字母/数字/`-_.`，最长 64；非法值不会静默降级成“无命名空间”（那会反而拿到共享视图），而是拒绝一切会话。`ns:` 前缀是内部的，客户端只传裸名。stdio 桥默认不带头，要隔离就自己包一层 HTTP 客户端或在桥上加头（`Config.Headers` 已支持）。
+
 ## 工具懒加载（deferred tool loading）
 
 Termcp 的 31 个工具按"热路径 / 低频面"分成两类。MCP 标准的 `defer_loading` 标记可以让客户端**按需加载**低频工具的 Schema，但这套机制**默认关闭**：
@@ -113,6 +132,7 @@ Termcp 的 31 个工具按"热路径 / 低频面"分成两类。MCP 标准的 `d
 | `rule_not_found` | 无此通知规则 rule_id | 用 `shell_notify(action=list)` 复核 |
 | `conflict` | 资源已存在 | 改用 edit/其它名称 |
 | `not_configured` | 功能未启用/未初始化 | 检查服务启动参数 |
+| `forbidden` | 该调用不在会话模板的 `allow`/`paths` 白名单内（extension 会话） | **不要重试**：用 `extension(action=get)` 看模板允许什么 |
 | `connection_failed` | SSH 拨号/连接失败 | 检查网络与目标地址 |
 | `operation_failed` | 其它操作失败 | 查看 `error` 详情 |
 | `internal_error` | 服务端内部错误 | 查看服务端日志 |
@@ -203,7 +223,7 @@ ssh_config(action=list)
 
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |------|------|------|------|------|
-| `shell_id` | string | **是** | — | |
+| `shell_id` | string | **是** | — | shell_id、session_id、`termcp://` 定位符，或**逗号分隔的列表**（批量：一条命令发给一批 shell） |
 | `text` | string | **是** | — | UTF-8 文本（不自动追加换行） |
 
 **返回**：`{ success, offset, total_lines, line }`（行协议驱动的关键返回值）
@@ -212,13 +232,32 @@ ssh_config(action=list)
 - `total_lines`：提交时的完整行数；`line`：按零长度位置语义（与 message spans 一致）——回显将续写的行号，流正好结束在行边界时为 `0`（回显将成为 `total_lines+1` 行，完成后经 `message` 可查）。
 - 时序提醒：pty 回显是异步的，`offset` 之后可能有进程输出插队；把 `offset` 当"提交位置"用，不要当"回显精确起点"断言。审阅模式（review pending）返回等待审阅的文本回复，无 offset——什么都没写入。
 
+#### 批量：一条命令发一批
+
+`shell_id` 写逗号分隔的列表就是批量（`"<idA>,<idB>,<idC>"`，每项可以是 shell_id、session_id 或 locator）：
+
+```jsonc
+{ "shell_id": "sh-a,sh-b,sh-c", "text": "systemctl status nginx\n" }
+→ { "results": [
+     { "shell_id": "sh-a", "ok": true, "success": true, "offset": 1024, "total_lines": 12, "line": 12 },
+     { "shell_id": "sh-b", "ok": true, ... },
+     { "shell_id": "sh-c", "ok": false, "error": "..." }
+   ] }
+```
+
+- **不是全有或全无**：每项独立尝试，一台 shell 失效不会挡住其余——这正是"发给十台"时最常见的情形。
+- **单个 id 的回包形状不变**（`{success, offset, …}`，没有 `results` 外壳），所以只对一个 shell 输入的调用方不用改代码。
+- 受审阅模式拦截的项在结果里带 `approved: false` + `review_pending: true`，与单次调用同一个形状；批量回包是模型判断"到底写没写"的唯一依据，因此不能只说 `ok`。
+
+`shell_key` 的 `shell_id` 同样接受列表，所以结束一批命令行也是一次调用。
+
 ### shell_key
 
 向 shell 发送命名按键。
 
 | 参数 | 类型 | 必填 | 默认 | 说明 |
 |------|------|------|------|------|
-| `shell_id` | string | **是** | — | |
+| `shell_id` | string | **是** | — | 同 `shell_input`，接受逗号分隔的列表（批量结束多行） |
 | `key` | string | **是** | — | 见下方白名单 |
 | `repeat` | number | 否 | `1` | 重复次数（上限约 20） |
 
@@ -391,7 +430,7 @@ ssh_config(action=list)
 
 ### notify_user
 
-向**人类用户**（而非 AI Agent）推送浏览器通知：在 Termcp Web UI 的**每个已打开页面**弹出彩色 toast，并尝试触发**浏览器系统通知**（需浏览器授权，页面在后台也能收到）；指定 `session_id` 时，该 session 的卡片会**高亮**（脉冲描边，滚到可视区；若其终端窗口已打开，窗口头部也会闪烁）。与 `shell_notify` 正相反 —— 后者是通知 AI Agent，本工具是 Agent 通知人。
+向**人类用户**（而非 AI Agent）推送浏览器通知：在 Termcp Web UI 的**每个已打开页面**弹出彩色 toast、**播一声提示音**，并触发**浏览器系统通知**（需浏览器授权，页面在后台也能收到）；指定 `session_id` 时，该 session 的卡片会**高亮**（脉冲描边，滚到可视区；若其终端窗口已打开，窗口头部也会闪烁）。与 `shell_notify` 正相反 —— 后者是通知 AI Agent，本工具是 Agent 通知人。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -414,6 +453,10 @@ ssh_config(action=list)
 // 会话在等人输密码 / 做确认：先通知，再发问
 { "message": "需要 sudo 密码才能继续安装依赖", "level": "warn", "duration_seconds": 0, "session_id": "<session_id>" }
 ```
+
+> **提示音与系统通知都需要一次用户手势。** 浏览器只在用户操作（点击、按键）里才授予通知权限、才允许播放声音，而通知本身是从 WebSocket 推过来的、不算手势——所以在收到通知时才去申请，只会被静默忽略。页面在**第一次点击或按键**时申请一次权限并打开音频通道，此后每条 `notify_user` 都会响。始终没有交互过的页面只有 toast（`delivered` 仍计入该页面），这跟“没有页面打开”是两回事。
+>
+> 提示音由 Web Audio 现场合成（两声短音，`warn`/`error` 音高不同），不是音频文件——省一次请求，也绕开 `<audio>` 的自动播放策略。不想听就静音标签页。
 
 > 想通知 Agent 自己，用 `shell_notify`（MCP 信令通道）；想让页面上的用户看到提醒，用 `notify_user`（浏览器界面）。
 >
@@ -451,6 +494,34 @@ ssh_config(action=list)
 ---
 
 ## 服务端发现与配置
+
+### extension（扩展层统一入口）
+
+带 capability 白名单的**常驻会话**：一个存下来的模板（对着哪个 ssh_config、跑什么命令、哪些工具/路径允许），reconciler 把它保持可用并把 `session_id`/`shell_id` 交给 agent。同一个 host 上白名单相同的扩展共享**一条连接**，各自驱动自己那条 channel。完整说明见 resource `extensions.md`。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `action` | string | **是** | `list` / `get` / `create` / `update` / `delete` / `retry` |
+| `name` | string | 条件 | 除 list 外都必填（`[A-Za-z0-9_-]`，最长 64） |
+| `kind` | string | 否 | create：`mcp`（MCP server：跑一个 stdio 程序，或用一个 HTTP 端点）/ `skill`（只读文件窗口，无 shell）/ `prompt`（交互终端）/ `custom`；决定未传字段的预设值 |
+| `target` | string | 否 | create 必填：ssh_config profile 名，或 `internal`（本机 loopback）。`kind=mcp` + `url` 只能用 `internal` |
+| `mode` | string | 否 | `pty` / `pipe`；`skill` 留空 = **不要 shell**（只有 SFTP 与转发） |
+| `command` / `args` | string / array | 否 | pipe 或一次性命令跑什么。pipe 没有登录 shell 可回退，因此 `mode=pipe` 必须给 `command`（或 `url`）。与 `url` 互斥 |
+| `url` | string | 否 | HTTP MCP 端点：**不另外起进程**，由 termcp 自己的桥在会话的 pipe 通道上转发（路径以 `/sse` 结尾 = SSE 传输）。与 `command` 互斥，且要求 `target="internal"` |
+| `headers` | object | 否 | `url` 的请求 header（name -> value），例如服务端要的 `X-Api-Key`；`{}` 清空 |
+| `allow` | array | 否 | 工具白名单。**空 = 不限制**；列了就是该会话能接受的完整集合 |
+| `paths` | array | 否 | 文件工具可触及的路径：前缀（`/srv/app/`）、glob（`*.md`）或正则（`re:^/srv/(app\|logs)/`）。`kind=skill` 至少一条。`local_path`（下载到本机的路径）也走这张表 |
+| `notes` | string | 否 | 给 agent 看的操作说明，`action=get` 会返回；第一次驱动前读它 |
+| `enabled` | bool | 否 | false = 停用：会话被拆掉，不再重连 |
+| `forwards` | array | 否 | 声明的隧道（`kind` = `dynamic` / `local` / `remote`），随会话建立与拆除 |
+| `rows` / `cols` | number | 否 | pty 尺寸，默认 24×80 |
+| `description` | string | 否 | 卡片上的一句话说明 |
+
+**update 的补丁语义**：**省略**的字段保持原值，**空数组**清空它——「把路径表缩短」与「不动路径表」因此是两次不同的调用。**类型不对的值直接拒绝**（不是静默忽略）：`allow`/`paths` 回退到「不修改」等于**清空**，而空 `allow` 恰恰是「不限制」，于是一个手误把会话放开了而不是收紧了。
+
+**返回**：`list` 给每个扩展的 `status`（`available` / `probing` / `unavailable` / `disabled`）以及可用时的 `session_id`/`shell_id`，不可用时给 `last_failure` 与 `next_retry`；`get` 给完整模板 + `failures` 历史 + `notes`。
+
+**驱动**：可用的扩展就是普通会话——`shell_input`/`shell_key`/`shell_output` 走它的 `shell_id`，`file_read`/`file_stat` 走 `session_id`。模板没列入的调用会被**真的拒绝**（`forbidden`，不是临时故障）：不要重试，也不要找绕道。扩展会话是基础设施，`session_list` 不列、Web UI 有独立一列，**不要 terminate/delete**（一条连接可能服务多个扩展）。
 
 ### shell_detect
 
@@ -541,8 +612,20 @@ password = "placeholder2"
 | `file_delete` | 删除文件或空目录 |
 | `file_rename` | 移动/重命名 |
 | `file_mkdir` | 创建目录（含父目录） |
-| `file_urls` | 获取 HTTP 下载/上传 URL |
+| `file_urls` | 获取 HTTP 下载/上传 URL（可指定下载响应的 header） |
 | `file_getwd` | SFTP 工作目录（不是 shell 的 `pwd`） |
+
+### file_urls
+
+返回 `{ download_url, upload_url, session_id, remote_path }`。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `session_id` | string | **是** | |
+| `remote_path` | string | **是** | 要下载/上传的远端路径 |
+| `response_headers` | object | 否 | 下载时响应必须带的 header，如 `{"Content-Disposition": "attachment; filename=\"x.png\""}` |
+
+`response_headers` 被拼进 `download_url` 的 query（`?h.<Name>=<value>`，见 `docs/api.md`），所以**谁打开这个 URL 都会带上它** —— curl、浏览器、别人转发的链接，不需要额外约定一个通道传 header。名字不是合法 HTTP token、值不是字符串、或值里带换行会被拒（header 注入）；`Content-Length`/`Content-Range`/`Transfer-Encoding`/`Connection`/`Trailer` 属于服务端，请求了也会被丢弃，其馀同名 header 覆盖服务端默认值（例如请求的 `Content-Disposition` 覆盖服务端本来是 `attachment; filename=` 的那个）。
 
 ### 低频操作：分组入口（action 枚举）
 

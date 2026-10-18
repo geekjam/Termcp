@@ -19,7 +19,7 @@ package mcp
 // that half was dropped rather than said twice.
 const mcpServerInstructions = `termcp agent rules:
 
-0) Tools: session_*/shell_* standalone; forward/message/ssh_config/file_perm/file_link/file_fs take an "action" (enum per schema). Full reference: resource api.md.
+0) Tools: session_*/shell_* standalone; forward/message/ssh_config/extension/file_perm/file_link/file_fs take an "action" (enum per schema). extension(action=list) → pinned trimmed sessions, status + the session_id/shell_id to drive them (extensions share a host's connection); get → its notes, read them first; kind=mcp runs a command or relays a url. Guides: api.md, extensions.md.
 1) IDs: session_id = connection (forwards, files, terminate, shell_open); shell_id = channel (input/key/output/resize/close, readers). Never invent them; take from session_start/shell_open/list. User termcp:// locators replace the argument they name (entry=ssh_config, #<sid>=session, #<sid>:N=shell): verbatim, no lookups.
 2) Mode: interactive shell (omit command/args, DEFAULT) for multi-step work; drive via shell_input + shell_key(enter) + shell_output(timeout<=3). shell_output returns ONLY new bytes: empty != done, keep polling. command/args ONLY for REPL/TUI, daemons or one atomic script; never split steps into session_start(bash -c) calls (loses cwd/env). ssh_config="internal" = the termcp host's own terminal (local, no SSH).
 3) After discovery, act with concrete calls, not prose; verify via output or an explicit success field.

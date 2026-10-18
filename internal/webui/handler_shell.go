@@ -21,6 +21,13 @@ func (h *Handler) handleCreateShell(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "parent session not found", http.StatusNotFound)
 		return
 	}
+	// Opening a channel is a capability like any other: an extension that keeps a
+	// pipe shell for one purpose must not be reachable by a second channel nobody
+	// whitelisted (a plain login shell inside the same container would carry the
+	// container's whole environment).
+	if restRefuseTool(w, h.Sessions.Get(parentID), "shell_open") {
+		return
+	}
 
 	var body startSessionBody
 	if r.Body != nil && r.ContentLength > 0 {
@@ -114,6 +121,14 @@ func (h *Handler) writeOutputRange(w http.ResponseWriter, r *http.Request, id st
 		writeTranscriptError(w, err)
 		return
 	}
+	// The whitelist is checked on the resolved container rather than on the argument,
+	// so every spelling transcript accepts (session id, shell id, locator) lands on
+	// the same decision — the same reconciliation the MCP guard makes. This route is
+	// the REST twin of shell_output, and a read is as gated as a write: the
+	// whitelist is about reachability, not direction.
+	if restRefuseTool(w, h.Sessions.Get(src.SessID), "shell_output") {
+		return
+	}
 
 	stream := strings.TrimSpace(r.URL.Query().Get("stream"))
 	if stream != "" && stream != "all" && stream != "o" && stream != "e" {
@@ -202,6 +217,16 @@ func (h *Handler) handleCloseShell(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	// Closing a channel is a capability like any other, and this is the REST twin of
+	// the gated shell_close tool: an extension that keeps a channel for one purpose
+	// must not have it torn down by a caller it never granted shell_close to. The
+	// owner is resolved first because the route names the shell, not the session,
+	// and both spellings are passed so a caller cannot walk around the refusal by
+	// naming the session instead. What gets closed below is unchanged: a session id
+	// still finds no shell to close, as before.
+	if sess := h.sessionOwning(id, id); restRefuseTool(w, sess, "shell_close") {
+		return
+	}
 	// Internal primary shell: tab close is a no-op (process outlives the tab).
 	if sess := h.Sessions.GetByShellID(id); sess != nil && sess.IsInternalPrimaryShell(id) {
 		w.WriteHeader(http.StatusNoContent)
@@ -222,6 +247,14 @@ func (h *Handler) handleClosePrimaryShell(w http.ResponseWriter, r *http.Request
 	sessionID := r.PathValue("id")
 	if sessionID == "" {
 		http.NotFound(w, r)
+		return
+	}
+	// The gate runs before the not-found return, and resolves either spelling: this
+	// route names a session, but the twin below it names a shell, and a refusal that
+	// only held for one of them would be a matter of how the caller spelled the id.
+	// The close logic stays keyed on the session id, so a shell id is still the
+	// no-op it was.
+	if restRefuseTool(w, h.sessionOwning(sessionID, sessionID), "shell_close") {
 		return
 	}
 	sess := h.Sessions.Get(sessionID)

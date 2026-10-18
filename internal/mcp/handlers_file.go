@@ -9,6 +9,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/open-mcp-ai/termcp/internal/clock"
+	"github.com/open-mcp-ai/termcp/pkg/api"
 )
 
 func (s *Server) handleFileRead(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
@@ -203,12 +204,49 @@ func (s *Server) handleGetFileURLs(_ context.Context, request mcpgo.CallToolRequ
 	}
 	// sess.ID, not the argument: these URLs are meant to be opened, and a locator
 	// would put '#' and '://' into the path.
+	//
+	// Requested response headers ride inside the download URL (see
+	// api.AppendResponseHeaders): the caller's list is folded into the query, so
+	// whoever opens it later — curl, a browser — gets the headers without
+	// anything else passing them along.
+	q := url.Values{"path": {remotePath}}
+	headers, bad := responseHeadersArg(args)
+	if bad != nil {
+		return bad, nil
+	}
+	if err := api.AppendResponseHeaders(q, headers); err != nil {
+		return toolError(CodeInvalidArgument, "%s", err.Error()), nil
+	}
 	return jsonResult(map[string]any{
-		"download_url": s.baseURL + "/api/sessions/" + sess.ID + "/files/download?path=" + url.QueryEscape(remotePath),
+		"download_url": s.baseURL + "/api/sessions/" + sess.ID + "/files/download?" + q.Encode(),
 		"upload_url":   s.baseURL + "/api/sessions/" + sess.ID + "/files/upload",
 		"session_id":   sess.ID,
 		"remote_path":  remotePath,
 	}), nil
+}
+
+// responseHeadersArg reads the response_headers argument: a map of header name
+// to value, the shape an MCP client sends for an object-typed property. A value
+// that is not a string is refused rather than dropped: the caller would get a
+// URL that looks like it carries the header and does not.
+func responseHeadersArg(args map[string]any) (map[string]string, *mcpgo.CallToolResult) {
+	v, ok := args["response_headers"]
+	if !ok || v == nil {
+		return nil, nil
+	}
+	raw, ok := v.(map[string]any)
+	if !ok {
+		return nil, toolError(CodeInvalidArgument, "%s", "response_headers must be an object of header name to string value")
+	}
+	headers := make(map[string]string, len(raw))
+	for name, value := range raw {
+		s, ok := value.(string)
+		if !ok {
+			return nil, toolError(CodeInvalidArgument, "response header %q must be a string, got %T", name, value)
+		}
+		headers[name] = s
+	}
+	return headers, nil
 }
 
 // handleFilePerm dispatches chmod, chown, chtimes.

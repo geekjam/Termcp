@@ -36,12 +36,13 @@ func (h *Handler) handleShellInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	cs := h.getShellForIO(w, r)
+	cs := h.getShellForIO(w, r, "shell_input")
 	if cs == nil {
 		return
 	}
 	// Review mode does NOT gate this path, for the same reason as the WebSocket:
-	// it is the operator's own interface.
+	// it is the operator's own interface. (The session's capability whitelist DOES
+	// gate it — see getShellForIO.)
 	//
 	// This endpoint is the script/CLI mirror of the browser terminal, and the Web
 	// UI's file browser is built on the same REST API. Gating it would lock the
@@ -70,11 +71,12 @@ func (h *Handler) handleShellKey(w http.ResponseWriter, r *http.Request) {
 	if req.Repeat < 1 {
 		req.Repeat = 1
 	}
-	cs := h.getShellForIO(w, r)
+	cs := h.getShellForIO(w, r, "shell_key")
 	if cs == nil {
 		return
 	}
-	// Same as /input: the operator's own key path, not the AI's.
+	// Same as /input: the operator's own key path, not the AI's. The capability
+	// whitelist still applies.
 	if err := cs.PressKey(req.Key, req.Repeat); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
@@ -94,7 +96,7 @@ func (h *Handler) handleShellResize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rows and cols must be positive", http.StatusBadRequest)
 		return
 	}
-	cs := h.getShellForIO(w, r)
+	cs := h.getShellForIO(w, r, "shell_resize")
 	if cs == nil {
 		return
 	}
@@ -106,9 +108,15 @@ func (h *Handler) handleShellResize(w http.ResponseWriter, r *http.Request) {
 }
 
 // getShellForIO resolves the shell named by the {id} path value and writes the
-// REST error response when it is missing or not running. Returns nil after it
-// has already written an error response.
-func (h *Handler) getShellForIO(w http.ResponseWriter, r *http.Request) *session.ChildShell {
+// REST error response when it is missing, not running, or outside the whitelist
+// of the session that owns it. Returns nil after it has already written an error
+// response.
+//
+// The whitelist check lives here because every REST terminal path goes through
+// this one resolver: gating it once covers input, keys and resize without each
+// handler repeating the rule (see restriction.go for why the REST surface is
+// gated at all).
+func (h *Handler) getShellForIO(w http.ResponseWriter, r *http.Request, tool string) *session.ChildShell {
 	id := r.PathValue("id")
 	cs := h.Sessions.GetChildShell(id)
 	if cs == nil {
@@ -117,6 +125,9 @@ func (h *Handler) getShellForIO(w http.ResponseWriter, r *http.Request) *session
 	}
 	if cs.Info().Status != api.SessionRunning {
 		http.Error(w, "shell is not running (status "+string(cs.Info().Status)+")", http.StatusConflict)
+		return nil
+	}
+	if restRefuseTool(w, h.Sessions.Get(cs.ParentSessionID()), tool) {
 		return nil
 	}
 	return cs

@@ -87,6 +87,16 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertEqual(exported.returncode, 0, exported.stderr)
         self.assertEqual(self.output.read_text(encoding="utf-8"), NOTICE)
 
+    def test_rc_notes_keep_the_final_registry_version(self):
+        self.write_fixture(pending=NOTICE)
+        prepared = self.run_script("prepare", "v0.3.0-rc.1", "--date", "2026-10-18")
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        exported = self.export("v0.3.0-rc.1")
+        self.assertEqual(exported.returncode, 0, exported.stderr)
+        self.assertEqual(self.output.read_text(encoding="utf-8"), NOTICE)
+        manifest = json.loads((self.root / "server.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest, self.manifest)
+
 
 if __name__ == "__main__":
     unittest.main()

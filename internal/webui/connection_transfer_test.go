@@ -12,8 +12,30 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/open-mcp-ai/termcp/internal/configcrypt"
 	"github.com/open-mcp-ai/termcp/internal/sshconfig"
 )
+
+func TestMultipartImportAcceptsLegacyPasswordExport(t *testing.T) {
+	source, target := exportImportEnv(t)
+	request := httptest.NewRequest("GET", "/api/connections/batch", nil)
+	request.Header.Set(EncryptHeader, "placeholder compatible export")
+	export := httptest.NewRecorder()
+	source.ServeHTTP(export, request)
+	if export.Code != 200 || !configcrypt.IsEncrypted(export.Body.Bytes()) {
+		t.Fatal("legacy header export no longer produces its portable format")
+	}
+	for _, password := range []string{"", "incorrect placeholder"} {
+		result := postTransferFile(t, target, export.Body.Bytes(), password, false)
+		if result.Code != 400 && result.Code != 403 {
+			t.Fatalf("invalid legacy password status=%d", result.Code)
+		}
+	}
+	result := postTransferFile(t, target, export.Body.Bytes(), "placeholder compatible export", false)
+	if result.Code != 201 || !strings.Contains(result.Body.String(), `"imported":1`) {
+		t.Fatalf("legacy file multipart import status=%d: %s", result.Code, result.Body.String())
+	}
+}
 
 func postTransferJSON(t *testing.T, mux http.Handler, path, body string) *httptest.ResponseRecorder {
 	t.Helper()

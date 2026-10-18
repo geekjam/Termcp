@@ -23,6 +23,7 @@ termcp <subcommand> [action] [flags]
 | `--disable-auth` | `false` | **刻意**关掉 HTTP 认证，包括非 loopback 绑定（或 `$TERMCP_DISABLE_AUTH_TOKEN=1`）。请配合 loopback 端口，只让本机调用者可达。与 `--auth-token`/`--auth-hash` 同时给出是错误，而不是某个参数静默胜出。 |
 | `--mcp-defer-tools` | `false` | 给低频 MCP 工具（`file_*`、`forward`、`shell_resize`…）打上 `defer_loading` 标记，让客户端按需拉取 schema，缩小首次 `tools/list`。默认关闭：忽略该标记的客户端——或经会丢弃该标记的网关转发的客户端——会从此看不到这些工具。见 [`clients.md`](./clients.md#工具懒加载)。 |
 | `--idle-timeout` | `30s / 不限` | 守护实例在无任何连接或请求时可自行退出前的时长，如 `10m`；`0` 关闭。默认：`termcp daemon stdio` 拉起的实例 30s，`termcp daemon start` 拉起的实例不限时。 |
+| `--namespace` | 空（实例所有者） | 仅 stdio 桥：声明调用方命名空间（字母/数字/`-_.`，最长 64），桥发的每个请求都带 `X-Termcp-Namespace`。实例侧于是只列出/接受这个命名空间里的会话，多个 bridge 接到同一实例时互不干扰。空 = 今天的全局视图。名字非法在启动时就被拒，不会留到第一条请求才失败。 |
 | `--gen-auth-hash` | *(动作)* | 生成 `--auth-hash` 用的加盐 SHA-256 哈希后退出（token 从参数取，或在终端下无回显地从 stdin 读）。 |
 | `--version` | *(动作)* | 打印版本、commit 与构建日期后退出。`make build`/release 构建经 `-ldflags` 注入版本（HEAD 正好带 tag 时为该 tag，否则 `dev-<commit>`，脏工作区再缀 `-dirty`）；裸 `go build` 或 `go install module@vX.Y.Z` 回落到 Go 工具链嵌入的模块版本（release tag，或检出的伪版本）。`dev` 表示二进制里没有任何版本信息——`go run`、`-buildvcs=false`、解包出来的 tarball——不代表源码未打 tag。 |
 
@@ -117,7 +118,7 @@ termcp <subcommand> [action] [flags]
 
 | 命令 | 作用 |
 | --- | --- |
-| `stdio` | 用 stdin/stdout 提供 MCP，把每条消息转发到 `--host`/`--port` 上已在应答的 HTTP MCP 端点——一个独立桥（它从不自己启动实例）。可选端点值跟在 `stdio` 后面：`sse`/`/sse` 选 SSE 传输，`stream`/`/stream` 选 streamable（默认），完整 `http(s)://` URL 指向任意 MCP HTTP 端点（路径以 `/sse` 结尾 = SSE）。 |
+| `stdio` | 用 stdin/stdout 提供 MCP，把每条消息转发到 `--host`/`--port` 上已在应答的 HTTP MCP 端点——一个独立桥（它从不自己启动实例）。可选端点值跟在 `stdio` 后面：`sse`/`/sse` 选 SSE 传输，`stream`/`/stream` 选 streamable（默认），完整 `http(s)://` URL 指向任意 MCP HTTP 端点（路径以 `/sse` 结尾 = SSE）。`--namespace <name>` 让这个桥成为一个独立调用方（见「权限边界」）。 |
 | `daemon` | 管理在 `--host`/`--port` 应答的实例；不带动作时列出动作，`termcp daemon --help` 展开完整参数与细节。 |
 | `daemon start` | 确保后台实例在跑：复用端点上应答的东西（手动起的实例也算），否则拉起一个分离实例并等它就绪。它运行到被停止——除非传 `--idle-timeout`，否则没有空闲倒计时。 |
 | `daemon stdio` | 与 `start` 相同，然后留在前台当该实例的 stdio 桥（可选端点值紧跟动作：`termcp daemon stdio sse`）。它拉起的实例在没有桥连接时开始倒计时。 |

@@ -69,7 +69,7 @@ func TestWithLogging_LogsErrorCodeOnCodedFailure(t *testing.T) {
 	h := func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 		return toolError(CodeShellNotFound, "Shell '%s' not found", "12d3e2f8-a15"), nil
 	}
-	wrapped := withLogging("shell_output", h)
+	wrapped := withLogging("shell_output", h, nil)
 
 	if _, err := wrapped(context.Background(), mcpgo.CallToolRequest{}); err != nil {
 		t.Fatalf("expected nil err, got %v", err)

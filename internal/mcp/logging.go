@@ -12,8 +12,20 @@ import (
 
 type toolHandler = func(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error)
 
-func withLogging(name string, h toolHandler) toolHandler {
+func withLogging(name string, h toolHandler, s *Server) toolHandler {
+	guard := toolGuard{server: s}
 	return func(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		// The restriction gate runs before anything else and before the handler
+		// is even entered: a call that a session's whitelist — or another caller's
+		// namespace — refuses must not reach the tool at all. Guarding here rather
+		// than in each handler means every tool that acts on an existing session is
+		// covered by construction, including ones added later.
+		if bad := guard.check(ctx, name, request); bad != nil {
+			slog.DebugContext(ctx, "tool refused by session restriction",
+				append([]any{"tool", name}, restrictionAttrs(request)...)...)
+			return bad, nil
+		}
+
 		start := time.Now()
 		baseAttrs := []any{"tool", name}
 		baseAttrs = appendSafeArgs(baseAttrs, request)
@@ -53,6 +65,20 @@ func withLogging(name string, h toolHandler) toolHandler {
 		}
 		return result, err
 	}
+}
+
+// restrictionAttrs names the target a refusal applied to, so the log line can
+// answer "which session refused what" without replaying the whole call.
+func restrictionAttrs(request mcpgo.CallToolRequest) []any {
+	args := request.GetArguments()
+	attrs := []any{}
+	if id := getString(args, "session_id", ""); id != "" {
+		attrs = append(attrs, "session_id", id)
+	}
+	if id := getString(args, "shell_id", ""); id != "" {
+		attrs = append(attrs, "shell_id", id)
+	}
+	return attrs
 }
 
 func appendSafeArgs(attrs []any, request mcpgo.CallToolRequest) []any {

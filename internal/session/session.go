@@ -83,6 +83,22 @@ type Config struct {
 	// applies to establishing the transport only — a created session outlives the
 	// request that asked for it, so the caller's request context must NOT be kept.
 	Ctx context.Context
+	// NoShell creates the container without a primary shell channel. The session
+	// then exists to carry SFTP and forwards, which an extension whose purpose is
+	// a read-only file window or a declared tunnel wants without paying for a
+	// shell nobody will drive. Mode is ignored when NoShell is set.
+	NoShell bool
+	// Restriction trims which tools may act on this session. It is the mechanism
+	// behind extensions: a zero value leaves an ordinary session unrestricted,
+	// and a session created from an extension template carries the whitelist the
+	// template's author defined.
+	Restriction Restriction
+	// Namespace marks the session as owned by a subsystem rather than requested
+	// by a user. It travels into the session record and the manifest, so the Web
+	// UI's cards, the node cards' session counts and the agent's session_list can
+	// leave it out while its terminal stays openable by whoever holds its id (see
+	// internal/ns). Empty means an ordinary session.
+	Namespace string
 }
 
 // Session wraps an interactive process session managed over SSH.
@@ -114,8 +130,9 @@ type Session struct {
 	enterCRLF      bool         // line-ending for pipe-mode enter (\r\n for cmd/powershell, \n for unix)
 	defaultShell   string       // profile default_shell, applied to shells opened later
 	onExit         OnExitPolicy // what to do when the last shell ends by itself
-	primaryShellID string       // first shell id (≠ session id); addressed by session-level helpers
+	primaryShellID string       // first shell id (≠ session id); addressed by session-level helpers; empty when NoShell
 	nextShellIndex int          // guarded by shellStateMu; monotonically assigns channel indexes
+	restriction    Restriction  // the zero value is unrestricted; see Config.Restriction
 
 	shells sync.Map // *ChildShell by ID
 	// approval gates input for the whole session when non-nil (see approval.go).
@@ -156,7 +173,6 @@ func newResourceID() string {
 // internal must be the built-in sshserver.Server (after Start) when cfg.Remote is nil; it may be nil for remote-only callers.
 func New(internal *sshserver.Server, cfg Config, msgMgr *message.Manager) (*Session, error) {
 	sessionID := newResourceID()
-	shellID := newResourceID()
 	name := cfg.Name
 	if name == "" {
 		name = fmt.Sprintf("session-%s", sessionID)
@@ -178,9 +194,6 @@ func New(internal *sshserver.Server, cfg Config, msgMgr *message.Manager) (*Sess
 		return nil, cfg.Ctx.Err()
 	}
 
-	buf := buffer.New(1024 * 1024)
-	rid, _ := buf.NewReader()
-
 	// Determine the target shell family so press_enter sends the right line
 	// ending. For internal sessions the target is the local host, so we probe
 	// it via the shell detector. For remote sessions the target OS is unknown
@@ -190,22 +203,6 @@ func New(internal *sshserver.Server, cfg Config, msgMgr *message.Manager) (*Sess
 		if _, family, _ := shell.NewDetector().Detect(); family != "unix" {
 			enterCRLF = true
 		}
-	}
-
-	// First shell is a peer in shells map; its id is never equal to session id.
-	root := &ChildShell{
-		ID:          shellID,
-		Index:       1,
-		Name:        name,
-		execSession: execSession,
-		buf:         buf,
-		done:        make(chan struct{}),
-		Status:      api.SessionRunning,
-		Rows:        cfg.Rows,
-		Cols:        cfg.Cols,
-		CreatedAt:   clock.Now(),
-		enterCRLF:   enterCRLF,
-		mode:        cfg.Mode,
 	}
 
 	s := &Session{
@@ -221,17 +218,58 @@ func New(internal *sshserver.Server, cfg Config, msgMgr *message.Manager) (*Sess
 			Rows:        cfg.Rows,
 			Cols:        cfg.Cols,
 			SSHEndpoint: sshEndpointPublic,
+			Namespace:   cfg.Namespace,
 		},
-		enterCRLF:      enterCRLF,
-		defaultShell:   cfg.DefaultShell,
-		onExit:         normalizeOnExit(cfg.OnExit),
-		execSession:    execSession,
-		buf:            buf,
-		readerID:       rid,
-		msgMgr:         msgMgr,
-		primaryShellID: shellID,
-		nextShellIndex: 1,
-		scope:          newResourceScope(),
+		enterCRLF:    enterCRLF,
+		defaultShell: cfg.DefaultShell,
+		onExit:       normalizeOnExit(cfg.OnExit),
+		execSession:  execSession,
+		restriction:  cfg.Restriction,
+		msgMgr:       msgMgr,
+		scope:        newResourceScope(),
+	}
+
+	// Message-manager session state is a session-scoped resource: release it
+	// through the same cascade that closes forwards and notification rules.
+	if msgMgr != nil {
+		s.AttachCleanup(func() { msgMgr.ForgetSession(sessionID) })
+	}
+
+	// A shell-less container is a connection that exists to carry SFTP and
+	// forwards. It skips the primary channel entirely, so the first shell opened
+	// on it later still becomes channel 1 — the public numbering a locator
+	// (termcp://#<sid>:1) refers to. Only the transport is watched, which is the
+	// one observer that survives having no shells at all.
+	if cfg.NoShell {
+		s.watchTransport(execSession)
+		slog.Debug("session started without a shell", "session_id", sessionID, "ssh_endpoint", sshEndpointPublic)
+		return s, nil
+	}
+
+	// The primary channel: a peer in the shells map whose id is never equal to
+	// the session id. Mint its id here, after the shell-less path has returned,
+	// so an unused id is not allocated for a container that will never have it.
+	shellID := newResourceID()
+	buf := buffer.New(1024 * 1024)
+	rid, _ := buf.NewReader()
+	s.buf = buf
+	s.readerID = rid
+	s.primaryShellID = shellID
+	s.nextShellIndex = 1
+
+	root := &ChildShell{
+		ID:          shellID,
+		Index:       1,
+		Name:        name,
+		execSession: execSession,
+		buf:         buf,
+		done:        make(chan struct{}),
+		Status:      api.SessionRunning,
+		Rows:        cfg.Rows,
+		Cols:        cfg.Cols,
+		CreatedAt:   clock.Now(),
+		enterCRLF:   enterCRLF,
+		mode:        cfg.Mode,
 	}
 
 	// "Process started" is a session lifecycle event, not shell output. It used to
@@ -239,11 +277,6 @@ func New(internal *sshserver.Server, cfg Config, msgMgr *message.Manager) (*Sess
 	// is logged rather than persisted as a transcript entry. Session lifecycle is
 	// still visible in the session manifest's status and timestamps.
 	slog.Debug("session ready", "session_id", sessionID, "shell_id", shellID)
-	// Message-manager session state is a session-scoped resource: release it
-	// through the same cascade that closes forwards and notification rules.
-	if msgMgr != nil {
-		s.AttachCleanup(func() { msgMgr.ForgetSession(sessionID) })
-	}
 	// Attach the root to the session BEFORE starting its readers so the output
 	// pipe and exit watcher see a live parent + message manager from the first
 	// byte. Starting readers first used to drop early output (never persisted).
@@ -311,30 +344,61 @@ func (s *Session) watchTransport(es *sshclient.ExecSession) {
 // grow the server's map by one dead entry per failed attempt for the life of the
 // process.
 func dialTransport(internal *sshserver.Server, cfg Config, usePty bool) (*sshclient.ExecSession, string, error) {
+	client, closers, endpoint, err := dialClient(internal, cfg)
+	if err != nil {
+		return nil, "", err
+	}
+	if cfg.NoShell {
+		// A shell-less container is the connection and nothing more: SFTP and
+		// forwards need the client, and a channel would start a process on the
+		// target that nothing drives and nothing watches — a container's liveness
+		// is the connection's.
+		return sshclient.BareClient(client, true, closers), endpoint, nil
+	}
+	es, err := sshclient.StartWithChain(cfg.Ctx, client, closers, cfg.Command, cfg.Args, usePty, cfg.Rows, cfg.Cols)
+	if err != nil {
+		return nil, "", err
+	}
+	return es, endpoint, nil
+}
+
+// dialClient acquires the SSH connection a session runs on and reports which
+// kind it is ("internal" or "remote", the two values published to MCP and the
+// JSON API - never a host or a credential). It opens no channel: what the
+// connection then carries is dialTransport's business.
+//
+// It is the branch that decides between the process's own loopback sshd and a
+// real remote target, which are the two ways a session can exist; separating it
+// keeps the session constructor about assembling a Session rather than about
+// dialing. The internal branch revokes its one-time credential on every failure
+// path: the credential is minted before the dial, and leaving it pending would
+// grow the server's map by one dead entry per failed attempt for the life of the
+// process.
+func dialClient(internal *sshserver.Server, cfg Config) (*ssh.Client, []io.Closer, string, error) {
 	ctx := cfg.Ctx
 	if !isRemote(cfg) {
 		if internal == nil {
-			return nil, "", errors.New("internal ssh server is not configured")
+			return nil, nil, "", errors.New("internal ssh server is not configured")
 		}
 		minted, err := internal.MintClientConfig()
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 		conn, err := internal.Dial()
 		if err != nil {
 			// The credential was never used: drop it instead of leaving a dead
 			// entry in the server's pending map for the process lifetime.
 			internal.RevokeClientConfig(minted.User)
-			return nil, "", err
+			return nil, nil, "", err
 		}
-		es, err := sshclient.StartWithConn(ctx, conn, minted, cfg.Command, cfg.Args, usePty, cfg.Rows, cfg.Cols)
+		client, err := sshclient.Handshake(ctx, conn, "inmem", minted)
 		if err != nil {
 			// A failed handshake consumes nothing, so the one-time credential is
 			// still pending; revoke it to keep the map bounded by live sessions.
 			internal.RevokeClientConfig(minted.User)
-			return nil, "", err
+			return nil, nil, "", err
 		}
-		return es, "internal", nil
+		return client, nil, "internal", nil
 	}
 
 	r := cfg.Remote
@@ -343,32 +407,35 @@ func dialTransport(internal *sshserver.Server, cfg Config, usePty bool) (*sshcli
 		port = 22
 	}
 	if port < 1 || port > 65535 {
-		return nil, "", fmt.Errorf("ssh_port must be between 1 and 65535, got %d", port)
+		return nil, nil, "", fmt.Errorf("ssh_port must be between 1 and 65535, got %d", port)
 	}
 	if r.Jump != nil {
 		client, closers, err := buildChainClient(ctx, r)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
-		es, err := sshclient.StartWithChain(ctx, client, closers, cfg.Command, cfg.Args, usePty, cfg.Rows, cfg.Cols)
-		if err != nil {
-			return nil, "", err
-		}
-		return es, "remote", nil
+		return client, closers, "remote", nil
 	}
-	dialAddr := remoteDialAddr(r)
 	clientCfg, err := remoteClientConfig(r)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
-	es, err := sshclient.StartWithConfig(ctx, dialAddr, clientCfg, r.Proxy, cfg.Command, cfg.Args, usePty, cfg.Rows, cfg.Cols)
+	addr := remoteDialAddr(r)
+	conn, err := sshclient.DialConn(ctx, addr, r.Proxy, clientCfg.Timeout)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", fmt.Errorf("ssh dial: %w", err)
 	}
-	return es, "remote", nil
+	client, err := sshclient.Handshake(ctx, conn, addr, clientCfg)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("ssh handshake: %w", err)
+	}
+	return client, nil, "remote", nil
 }
 
-// PrimaryShellID returns the first shell created with this session.
+// PrimaryShellID returns the first shell created with this session. It is empty
+// for a shell-less container (Config.NoShell), which carries SFTP and forwards
+// but no channel to drive; callers that address the primary shell must treat
+// empty as "no terminal here".
 func (s *Session) PrimaryShellID() string {
 	return s.primaryShellID
 }
@@ -376,6 +443,13 @@ func (s *Session) PrimaryShellID() string {
 // PrimaryShell returns the first shell if still registered.
 func (s *Session) PrimaryShell() *ChildShell {
 	return s.GetChildShell(s.primaryShellID)
+}
+
+// Restriction reports what the tool surface may do to this session. The zero
+// value is unrestricted; a session created from an extension template carries
+// the whitelist that template defined. Tool handlers consult it before acting.
+func (s *Session) Restriction() Restriction {
+	return s.restriction
 }
 
 // Terminate ends the remote process/transport and marks the session DEAD
@@ -666,9 +740,15 @@ func (s *Session) Info() api.Session {
 	if approvalState != nil {
 		cp.ApprovalMode = true
 		cp.ApprovalNeed = approvalState.queue.Need()
+		// Empty for "every kind": the JSON key is omitted then, so an older
+		// reader sees exactly the manifest it always did.
+		for _, k := range approvalState.scopeList() {
+			cp.ApprovalScopes = append(cp.ApprovalScopes, string(k))
+		}
 	} else {
 		cp.ApprovalMode = false
 		cp.ApprovalNeed = 0
+		cp.ApprovalScopes = nil
 	}
 	return cp
 }

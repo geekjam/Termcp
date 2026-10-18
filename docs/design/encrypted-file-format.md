@@ -35,6 +35,7 @@ macOS 通过 `/usr/bin/security -i` 的 stdin 写入秘密；Linux 使用 libsec
 `Derive(purpose, identity)` 使用 HKDF-SHA256：salt 为 Store ID；info 是
 `termcp/encryptedfs/v1` 后接两个「uint32 字节长度 + UTF-8 原始字节」字段。
 用途及逻辑身份均不可为空，最长各 4096 字节；调用方使用稳定的逻辑 ID，不能使用机器相关的绝对目录名。
+扩展模板使用 `purpose=config`、`identity=extensions/<name>` 派生用途密钥，文件认证身份也为 `extensions/<name>`；不同模板之间不能直接替换密文。
 配置、事件和索引使用不同用途；每个文件还以随机 File ID 为 salt 再派生文件密钥。
 
 `NewPasswordKeyManager` 检查首次密码确认；`ChangePasswordAndSave` 串行执行当前密码验证、两次新密码核对、重封装和原子保存。

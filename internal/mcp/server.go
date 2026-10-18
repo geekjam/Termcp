@@ -10,6 +10,7 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
+	"github.com/open-mcp-ai/termcp/internal/extensions"
 	"github.com/open-mcp-ai/termcp/internal/forward"
 	"github.com/open-mcp-ai/termcp/internal/message"
 	"github.com/open-mcp-ai/termcp/internal/notify"
@@ -26,6 +27,7 @@ type Server struct {
 	msgMgr          *message.Manager
 	sshConfigs      *sshconfig.Store
 	forwardMgr      *forward.ForwardManager
+	extensions      *extensions.Reconciler
 	notifyMgr       *notify.Manager
 	baseURL         string                // http://host:port, set from Start()
 	docsFS          fs.FS                 // embedded agent docs, set via SetDocsFS
@@ -38,6 +40,14 @@ type Server struct {
 	// tool). Set by main to webui.Handler.BroadcastUINotify so this package stays
 	// decoupled from webui. Returns the number of open tabs that received it.
 	uiNotify func(level, title, message, sessionID string, durationSec int) int
+
+	// connections tracks the MCP clients currently attached (see connections.go).
+	// It is fed by mcp-go's session hooks, which is the only place a client
+	// attaching or detaching is observable.
+	connections *connRegistry
+	// connListener is called when that set changes, so the Web UI can refresh
+	// without polling. Set by main to the same broadcast the session list uses.
+	connListener func()
 }
 
 // Option customizes a Server at construction time. Options keep New's signature
@@ -166,7 +176,15 @@ func (s *Server) RegisterSSHConfigWriteTools() {
 	}
 	t.Description = "SSH connection profiles: action=list (names only, never secrets), create, edit (patch; omitted fields keep stored values incl. secrets), copy (server-side, secrets never reach the agent), delete. create requires host+user and password or private_key." + sshConfigImportFormat
 	s.mcpServer.DeleteTools("ssh_config")
-	s.mcpServer.AddTool(t, withLogging("ssh_config", s.handleSSHConfigOps))
+	s.mcpServer.AddTool(t, withLogging("ssh_config", s.handleSSHConfigOps, s))
+}
+
+// SetExtensionReconciler wires the extension layer. Without it the extension
+// tool reports not_configured rather than offering a surface with no backing
+// state, so a deployment that does not run the reconciler fails loudly instead
+// of silently accepting templates it never connects.
+func (s *Server) SetExtensionReconciler(r *extensions.Reconciler) {
+	s.extensions = r
 }
 
 // SSEHandler exposes the MCP SSE endpoint for mounting on a shared mux.

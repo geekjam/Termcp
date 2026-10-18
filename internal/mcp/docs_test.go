@@ -15,6 +15,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/open-mcp-ai/termcp/internal/locator"
+	"github.com/open-mcp-ai/termcp/internal/ns"
 	"github.com/open-mcp-ai/termcp/internal/webui"
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
@@ -544,6 +545,213 @@ func TestStreamableTransportAdvertisesRequestHost(t *testing.T) {
 	if !strings.Contains(listing, "This instance's Web UI: http://termcp.lan.example:9000/") {
 		t.Errorf("tools/list does not carry the address the client dialed:\n%s", listing)
 	}
+}
+
+// The unit tests above exercise the rule directly; this one holds the wire it
+// hangs on. A transport that never installed the namespace hook would keep every
+// other test green while no real client was ever scoped — and the failure mode is
+// the worst kind: isolation that silently is not one, because every caller keeps
+// seeing and reaching everything.
+func TestStreamableTransportScopesByNamespaceHeader(t *testing.T) {
+	s, _, _, _ := newTestServerWithHistory(t)
+	ts := httptest.NewServer(s.StreamableHTTPHandler())
+	defer ts.Close()
+
+	// One MCP session per caller, each carrying its own header. The header is what
+	// a client sets once and expects to hold for the whole conversation, so a test
+	// that varies it per request would not be measuring the thing that matters.
+	caller := func(name string) *mcpSession {
+		t.Helper()
+		return openMCPSession(t, ts, name)
+	}
+
+	alice := caller("alice")
+	bob := caller("bob")
+	owner := openMCPSession(t, ts, "")
+
+	aliceSid := alice.startSession(t)
+	bobSid := bob.startSession(t)
+
+	// Each caller lists its own and only its own.
+	t.Run("listings are disjoint", func(t *testing.T) {
+		got := alice.listSessions(t)
+		if !got[aliceSid] || got[bobSid] {
+			t.Errorf("alice's list = %v, want exactly %s", got, aliceSid)
+		}
+		got = bob.listSessions(t)
+		if !got[bobSid] || got[aliceSid] {
+			t.Errorf("bob's list = %v, want exactly %s", got, bobSid)
+		}
+	})
+
+	// The owner sees both: an agent's session is an ordinary session with a tag,
+	// and the person running the instance is not a tenant in it.
+	t.Run("the owner sees both", func(t *testing.T) {
+		got := owner.listSessions(t)
+		if !got[aliceSid] || !got[bobSid] {
+			t.Errorf("the owner's list = %v, want both agent sessions", got)
+		}
+	})
+
+	t.Run("a peer cannot drive the other's session", func(t *testing.T) {
+		res := bob.callTool("shell_input", map[string]any{"shell_id": aliceSid, "text": "echo pwned"})
+		if !res.IsError {
+			t.Fatal("bob wrote to alice's session")
+		}
+		text := res.Content[0].(mcpgo.TextContent).Text
+		if !strings.Contains(text, "ns:bob") && !strings.Contains(text, "namespace bob") {
+			t.Errorf("refusal does not name the caller's namespace: %s", text)
+		}
+	})
+
+	t.Run("the owner may drive either", func(t *testing.T) {
+		res := owner.callTool("shell_list", map[string]any{"session_id": aliceSid})
+		if res.IsError {
+			t.Fatalf("the owner was refused: %+v", res)
+		}
+	})
+}
+
+// mcpSession is one caller's conversation with the instance: its own HTTP client
+// state (the MCP session id) and its own namespace header.
+type mcpSession struct {
+	t       *testing.T
+	ts      *httptest.Server
+	session string
+	name    string
+	lastID  int
+}
+
+func openMCPSession(t *testing.T, ts *httptest.Server, name string) *mcpSession {
+	t.Helper()
+	c := &mcpSession{t: t, ts: ts, name: name}
+	r := c.request(map[string]any{
+		"jsonrpc": "2.0", "id": c.nextID(), "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2025-06-18",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "nstest", "version": "1"},
+		},
+	})
+	resp, err := ts.Client().Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.session = resp.Header.Get("Mcp-Session-Id")
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if c.session == "" {
+		t.Fatal("initialize returned no session id")
+	}
+	if name != "" {
+		// The claim has to be accepted on the FIRST request too, or the namespace a
+		// caller asked for would apply only from its second message — and the session
+		// it started while unnamed would be somebody else's.
+		if err := ns.ValidCallerName(name); err != nil {
+			t.Fatalf("test asked for an invalid namespace %q: %v", name, err)
+		}
+	}
+	return c
+}
+
+func (c *mcpSession) nextID() int {
+	c.lastID++
+	return c.lastID
+}
+
+// request builds one JSON-RPC POST with this caller's namespace header, exactly
+// as the stdio bridge and an SDK client do.
+func (c *mcpSession) request(payload map[string]any) *http.Request {
+	c.t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	r, err := http.NewRequest(http.MethodPost, c.ts.URL, strings.NewReader(string(body)))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "application/json, text/event-stream")
+	if c.session != "" {
+		r.Header.Set("Mcp-Session-Id", c.session)
+	}
+	if c.name != "" {
+		r.Header.Set(NamespaceHeader, c.name)
+	}
+	return r
+}
+
+// callTool performs one tool call and returns the parsed result. Only the
+// JSON-body reply shape is handled: these tests never register a notification,
+// so the transport has no reason to answer in SSE.
+func (c *mcpSession) callTool(tool string, args map[string]any) *mcpgo.CallToolResult {
+	c.t.Helper()
+	r := c.request(map[string]any{
+		"jsonrpc": "2.0", "id": c.nextID(), "method": "tools/call",
+		"params": map[string]any{"name": tool, "arguments": args},
+	})
+	resp, err := c.ts.Client().Do(r)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	var envelope struct {
+		Result *mcpgo.CallToolResult      `json:"result"`
+		Error  *mcpgo.JSONRPCErrorDetails `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		c.t.Fatalf("decoding %s reply: %v (%s)", tool, err, body)
+	}
+	if envelope.Error != nil {
+		c.t.Fatalf("%s failed at the JSON-RPC level: %s", tool, envelope.Error.Message)
+	}
+	if envelope.Result == nil {
+		c.t.Fatalf("%s returned no result: %s", tool, body)
+	}
+	return envelope.Result
+}
+
+func (c *mcpSession) startSession(t *testing.T) string {
+	t.Helper()
+	res := c.callTool("session_start", map[string]any{
+		"ssh_config": "internal",
+		"command":    testShell(),
+		"mode":       "pipe",
+	})
+	if res.IsError {
+		t.Fatalf("session_start failed: %+v", res)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(res.Content[0].(mcpgo.TextContent).Text), &out); err != nil {
+		t.Fatal(err)
+	}
+	return out["session_id"].(string)
+}
+
+func (c *mcpSession) listSessions(t *testing.T) map[string]bool {
+	t.Helper()
+	res := c.callTool("session_list", nil)
+	if res.IsError {
+		t.Fatalf("session_list failed: %+v", res)
+	}
+	var out struct {
+		Sessions []struct {
+			ID string `json:"id"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal([]byte(res.Content[0].(mcpgo.TextContent).Text), &out); err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, s := range out.Sessions {
+		ids[s.ID] = true
+	}
+	return ids
 }
 
 // The resource listing travels the same wire as the tool listing, so it must

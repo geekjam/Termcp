@@ -40,7 +40,7 @@ vm.createContext(sandbox);vm.runInContext(source,sandbox);
 async function drain(){for(let i=0;i<6;i++)await new Promise(setImmediate);}
 function click(id){el(id).onclick.call(el(id),{stopPropagation(){}});}
 (async()=>{
-  sandbox.exportSelectedNodes();assert.equal(el('modal-conn-export').hidden,false);assert.equal(calls.length,0);
+  sandbox.exportSelectedNodes(selected);assert.equal(el('modal-conn-export').hidden,false);assert.equal(calls.length,0);
   click('conn-export-run');click('conn-export-run');await drain();
   assert.equal(calls.length,1);assert.equal(calls[0].path,'/mounted/api/connections/batch/export');
   assert.deepEqual(JSON.parse(calls[0].options.body),{names:['one'],password:'',confirm_password:''});
@@ -56,7 +56,7 @@ function click(id){el(id).onclick.call(el(id),{stopPropagation(){}});}
   assert(!calls[1].path.includes('placeholder'));
   sandbox.openConnectionExport(['one']);el('conn-export-password').value='placeholder cancelled';click('conn-export-close');
   assert.equal(el('conn-export-password').value,'');assert.equal(el('modal-conn-export').hidden,true);
-  sandbox.window._lastConnections=[{name:'one',temporary:true}];sandbox.exportSelectedNodes();assert.equal(toasts.pop(),'nethub.batch.exportTemporary');
+  sandbox.window._lastConnections=[{name:'one',temporary:true}];sandbox.exportSelectedNodes(selected);assert.equal(toasts.pop(),'nethub.batch.exportTemporary');
 
   click('conn-import-open');el('conn-import-file').files=[{name:'configuration.enc'}];
   el('conn-import-password').value='placeholder import';el('conn-import-temporary').checked=true;

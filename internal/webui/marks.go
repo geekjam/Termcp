@@ -49,7 +49,7 @@ type marksResponse struct {
 // for the last span.
 func (h *Handler) handleShellMarks(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	sessionID, shellID, ok := h.marksTarget(id)
+	sessionID, shellID, ok := h.marksTarget(w, id, "message")
 	if !ok {
 		http.Error(w, "shell not found: "+id, http.StatusNotFound)
 		return
@@ -135,21 +135,35 @@ func marksWindow(r *http.Request) (start, end int64, windowed, ok bool) {
 	return start, end, true, true
 }
 
-// marksTarget maps the path id to the (session_id, shell_id) pair that names a
-// shell's log files. It accepts a shell_id — live, or a DEAD/restored one that
-// only exists in the session's retained shell snapshot — and, like output-range,
-// a session_id as a primary-shell fallback. ok is false only for an id this
-// instance knows nothing about (404).
-func (h *Handler) marksTarget(id string) (sessionID, shellID string, ok bool) {
+// marksTarget resolves the session a byte-read route names, and is the single
+// choke point for the four that read a transcript (marks, lines, rail, and the
+// output-range pair in handler_shell.go). It accepts a shell_id — live, or a
+// DEAD/restored one that only exists in the session's retained shell snapshot —
+// and, like output-range, a session_id as a primary-shell fallback. ok is false
+// both for an id this instance knows nothing about (404) and for one the
+// whitelist refuses, which is why the response is already written by then.
+//
+// It gates the session's whitelist for the same reason getShellForIO does: these
+// routes are the REST twin of shell_output and message(action=list), so leaving
+// them open would make the whitelist a matter of which transport a caller picked.
+// The tool argument is the MCP name the route mirrors, because the routes do not
+// all speak the same one.
+func (h *Handler) marksTarget(w http.ResponseWriter, id, tool string) (sessionID, shellID string, ok bool) {
 	if id == "" {
 		return "", "", false
 	}
 	// Searches live child shells and retained DEAD/restored snapshots alike, which
 	// is what lets a closed session keep serving its own history.
 	if sess := h.Sessions.GetSessionByShellID(id); sess != nil {
+		if restRefuseTool(w, sess, tool) {
+			return "", "", false
+		}
 		return sess.ID, id, true
 	}
 	if sess := h.Sessions.Get(id); sess != nil {
+		if restRefuseTool(w, sess, tool) {
+			return "", "", false
+		}
 		return sess.ID, "", true
 	}
 	return "", "", false

@@ -42,6 +42,16 @@ func withRequestOrigin(ctx context.Context, r *http.Request) context.Context {
 	return ctx
 }
 
+// withRequestContext is what both transports install: the request's origin and
+// its namespace claim, in one function. mcp-go's context hook is a single slot
+// per transport (WithHTTPContextFunc replaces rather than stacks), so the two
+// derivations are composed here instead of being passed one after the other —
+// the second call would silently drop the first, which is a failure mode with no
+// symptom until a caller asks where this instance is or which namespace it owns.
+func withRequestContext(ctx context.Context, r *http.Request) context.Context {
+	return withCallerNamespace(withRequestOrigin(ctx, r), r)
+}
+
 // originFor resolves the origin to advertise to this particular caller: the
 // address of the request being answered, else the bind address as a last resort.
 // Resolution happens per call because the right answer is "wherever this client

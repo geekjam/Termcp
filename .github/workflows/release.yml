@@ -64,4 +64,7 @@ jobs:
         with:
           body_path: ${{ runner.temp }}/termcp-release-notes.md
           generate_release_notes: true
+          # An rc tag is an internal test build: mark it as a pre-release so it
+          # is not offered as "the latest release" on the repository page.
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
           files: dist/*

@@ -12,18 +12,49 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = "ghcr.io/open-mcp-ai/termcp"
-VERSION = re.compile(r"v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
+# Releases are vX.Y.Z, or vX.Y.Z-rc.N for a pre-release ("rc" means an internal
+# test build: binaries and an image, no registry entry).
+VERSION = re.compile(
+    r"v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-rc\.(0|[1-9][0-9]*))?\Z"
+)
+RC = re.compile(r"-rc\.(0|[1-9][0-9]*)\Z")
 UNRELEASED = re.compile(r"^## Unreleased\s*$", re.MULTILINE)
-RELEASE = re.compile(r"^## v(\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE)
-RELEASE_BRANCH = re.compile(r"^release/v(\d+\.\d+\.\d+)$")
-RELEASE_TITLE = re.compile(r"^release: v(\d+\.\d+\.\d+)$", re.IGNORECASE)
+RELEASE = re.compile(r"^## v(\d+\.\d+\.\d+(?:-rc\.\d+)?) — (\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE)
+# A pre-release heading does not name what server.json must hold (see validate),
+# so the newest FINAL heading is a separate query.
+FINAL_RELEASE = re.compile(r"^## v(\d+\.\d+\.\d+) — \d{4}-\d{2}-\d{2}\s*$", re.MULTILINE)
+RELEASE_BRANCH = re.compile(r"^release/v(\d+\.\d+\.\d+(?:-rc\.\d+)?)$")
+RELEASE_TITLE = re.compile(r"^release: v(\d+\.\d+\.\d+(?:-rc\.\d+)?)$", re.IGNORECASE)
+
+
+def is_prerelease(version):
+    return RC.search(version) is not None
 
 
 def normalized_version(value):
     match = VERSION.fullmatch(value)
     if not match:
-        raise ValueError(f"invalid release version {value!r}; use vMAJOR.MINOR.PATCH")
-    return ".".join(match.groups())
+        raise ValueError(
+            f"invalid release version {value!r}; use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N"
+        )
+    base = ".".join(match.group(1, 2, 3))
+    return f"{base}-rc.{match.group(4)}" if match.group(4) else base
+
+
+def base_version(version):
+    """The release a version belongs to: 0.2.8-rc.1 and 0.2.8 are both 0.2.8."""
+    return version.partition("-rc.")[0]
+
+
+def version_order(version):
+    """Sort key: a final release outranks any rc of the same base version."""
+    _, _, rc = version.partition("-rc.")
+    return (*map(int, base_version(version).split(".")), (0, int(rc)) if rc else (1, 0))
+
+
+def newest_final(text):
+    match = FINAL_RELEASE.search(text)
+    return match.group(1) if match else None
 
 
 def changelog_parts(text):
@@ -44,18 +75,32 @@ def validate(text, manifest, expected=None):
         datetime.date.fromisoformat(release.group(2))
     except ValueError as exc:
         raise ValueError(f"CHANGELOG.md v{version} has an invalid date") from exc
-    if manifest.get("version") != version:
-        raise ValueError(f"server.json version {manifest.get('version')!r} != changelog v{version}")
+    # An rc is an internal test build: it is never published to the registry, so
+    # server.json keeps naming the newest FINAL release and an rc leaves it
+    # alone. Requiring that here (rather than tolerating a bumped manifest) is
+    # what keeps this script and TestServerJSONMatchesChangelog from disagreeing
+    # about what an rc heading means.
+    published = newest_final(text) if is_prerelease(version) else version
+    if not published:
+        raise ValueError("CHANGELOG.md has no final vX.Y.Z release for server.json to name")
+    if manifest.get("version") != published:
+        raised = f" (v{version} is a pre-release and must not move server.json)" if published != version else ""
+        raise ValueError(f"server.json version {manifest.get('version')!r} != {published}{raised}")
     packages = manifest.get("packages")
     if not isinstance(packages, list) or not packages:
         raise ValueError("server.json needs at least one package")
     identifier = packages[0].get("identifier") if isinstance(packages[0], dict) else None
-    if identifier != f"{IMAGE}:{version}":
-        raise ValueError(f"server.json package identifier {identifier!r} != {IMAGE}:{version}")
+    if identifier != f"{IMAGE}:{published}":
+        raise ValueError(f"server.json package identifier {identifier!r} != {IMAGE}:{published}")
     if not re.search(r"^\s*-\s+\S", release_body, re.MULTILINE):
         raise ValueError(f"CHANGELOG.md v{version} needs at least one release note")
     if expected is not None:
         expected = normalized_version(expected)
+        # The branch/PR signal and the tag are the same rule: the name must be
+        # the version the changelog describes, exactly. An rc names itself
+        # (`release/v0.2.8-rc.1`) and the final release names itself
+        # (`release/v0.2.8`) - so the name on the PR always says which build is
+        # being cut, and neither can be waved through by the other.
         if version != expected:
             raise ValueError(f"release v{expected} requested, but files describe v{version}")
         if unreleased_body.strip():
@@ -84,7 +129,7 @@ def main():
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="verify server.json and CHANGELOG.md")
-    check.add_argument("--expected", help="release tag, e.g. v0.2.5")
+    check.add_argument("--expected", help="release version, e.g. v0.2.5 or v0.2.8-rc.1")
     notes = commands.add_parser("notes", help="export the reviewed notes for a release tag")
     notes.add_argument("--expected", required=True, help="release tag, e.g. v0.2.5")
     notes.add_argument("--output", type=Path, required=True, help="UTF-8 release body file")
@@ -109,8 +154,7 @@ def main():
             raise ValueError("add an Unreleased section with notes before preparing a release")
         if not re.search(r"^\s*-\s+\S", unreleased_body, re.MULTILINE):
             raise ValueError("Unreleased has no notes to move into the new release")
-        current = tuple(map(int, release.group(1).split(".")))
-        if tuple(map(int, version.split("."))) <= current:
+        if version_order(version) <= version_order(release.group(1)):
             raise ValueError(f"v{version} must be newer than v{release.group(1)}")
         text = (
             text[:unreleased.end()]
@@ -119,8 +163,9 @@ def main():
             + "\n\n"
             + text[release.start():]
         )
-        manifest["version"] = version
-        manifest["packages"][0]["identifier"] = f"{IMAGE}:{version}"
+        if not is_prerelease(version):
+            manifest["version"] = version
+            manifest["packages"][0]["identifier"] = f"{IMAGE}:{version}"
         validate(text, manifest, version)
         changelog_path.write_text(text, encoding="utf-8")
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

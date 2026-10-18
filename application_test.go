@@ -9,12 +9,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/open-mcp-ai/termcp/internal/config"
 	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
+	"github.com/open-mcp-ai/termcp/internal/extensions"
 	"github.com/open-mcp-ai/termcp/internal/securestore"
 	"github.com/open-mcp-ai/termcp/internal/storage"
 	"github.com/open-mcp-ai/termcp/internal/webui"
@@ -37,6 +40,16 @@ func TestApplicationPublishesMigratedHistoryOnlyAfterUnlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	template := &extensions.Extension{Name: "docs", Kind: extensions.KindMCP, Target: "internal", Mode: "pipe", URL: "https://example.invalid/mcp", Headers: map[string]string{"Authorization": "placeholder extension credential"}}
+	template.SetEnabled(false)
+	legacyTemplates := extensions.NewStore(root)
+	if err := legacyTemplates.Save(template); err != nil {
+		t.Fatal(err)
+	}
+	templateBytes, err := legacyTemplates.ReadRaw("docs")
+	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := &config.Config{DataDir: root, NoInternal: true}
@@ -85,6 +98,12 @@ func TestApplicationPublishesMigratedHistoryOnlyAfterUnlock(t *testing.T) {
 	}
 	verify := func() {
 		t.Helper()
+		if rr := request("/api/extensions/docs?format=toml"); rr.Code != 200 || !bytes.Equal(rr.Body.Bytes(), templateBytes) {
+			t.Fatal("application lost encrypted extension templates or reconciler wiring")
+		}
+		if _, err := os.Stat(filepath.Join(root, "extensions", "docs", "config.toml")); !os.IsNotExist(err) {
+			t.Fatal("application retained plaintext extension credentials")
+		}
 		rr := request("/api/sessions/sessionA/shells")
 		var shells struct {
 			Shells []api.Session `json:"shells"`

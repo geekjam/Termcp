@@ -54,6 +54,17 @@ func TestSessionSwitcherUsesOneDataSource(t *testing.T) {
 			t.Errorf("%s should call %s", tc.name, tc.want)
 		}
 	}
+	// …and it must reach that normaliser without a session lookup, because the tab
+	// owns its window. That is the whole reason a status card is safe here: its _sid
+	// is the extension's NAME, so resolving it as a session would dial a terminal
+	// named after the extension (and a pending dial has no id to resolve at all).
+	tabBody := between(t, shellWins, "var order = [];", "order.forEach(function (t) { scroll.appendChild(t); });")
+	if !strings.Contains(tabBody, "focusShellWindow(w);") {
+		t.Error("clicking a tab must raise the window it owns, not resolve a session for it")
+	}
+	if strings.Contains(tabBody, "focusSessionWindow(") {
+		t.Error("the tab bar must not resolve a session: a status card's _sid is a name, and a dial has no id yet")
+	}
 	if strings.Contains(sessions, "openOrFocusShellWindow(") {
 		t.Error("sessions.js should use focusSessionWindow, not the old alias")
 	}
@@ -133,6 +144,44 @@ func TestMinimizeKeepsTheWindowAlive(t *testing.T) {
 	grid := between(t, shellWins, "function applyPaneGrid", "\n  var n = wins.length")
 	if !strings.Contains(grid, "win-minimized") {
 		t.Error("applyPaneGrid should not count minimized panes as grid cells")
+	}
+}
+
+func TestFocusSessionWindowNormalisesState(t *testing.T) {
+	shellWins := readAssetLF(t, "static/js/shell-windows.js")
+	body := between(t, shellWins, "function focusSessionWindow", "\n}\n")
+
+	// Picking a session has to undo whatever state the window was left in, so it
+	// routes through the shared normaliser — the same steps the tab bar needs for a
+	// window it already owns (a pending dial has no session id yet, and a status
+	// card's _sid is the extension's NAME, so neither can go through a session
+	// lookup).
+	if !strings.Contains(body, "focusShellWindow(ex, opts)") {
+		t.Error("focusSessionWindow should normalise and raise through focusShellWindow")
+	}
+	// The normaliser itself owns the steps. Asserting them here rather than in
+	// focusSessionWindow's own body keeps this test about the BEHAVIOUR (a window in
+	// any of those states ends up raised) instead of about which function spells it
+	// out — the split that made this test fail when the steps moved.
+	normalise := between(t, shellWins, "function focusShellWindow", "\n}\n")
+	for _, want := range []string{"restoreShellWindow(ex)", "expandShellWindow(ex)", "bringShellWindowToFront(ex)"} {
+		if !strings.Contains(normalise, want) {
+			t.Errorf("focusShellWindow should call %s", want)
+		}
+	}
+	// A window raised while the tab bar's global "hide all" is on must come back
+	// into view, or the window the user just picked stays invisible.
+	if !strings.Contains(normalise, "showAllWindows()") {
+		t.Error("focusShellWindow should clear the tab bar's hide-all state")
+	}
+	// opts travel with the window: the extension panel asks for one extension's
+	// channel, and dropping them would land on whichever tab was last active.
+	if !strings.Contains(normalise, "opts.shell") || !strings.Contains(normalise, "opts.readOnly") {
+		t.Error("focusShellWindow must honour opts.shell and opts.readOnly")
+	}
+	// An unknown session still opens a window.
+	if !strings.Contains(body, "openShellWindow(") {
+		t.Error("focusSessionWindow should open a window when none exists for that session")
 	}
 }
 
@@ -251,9 +300,14 @@ func TestNetHubAttributesHostsByProfileNotDisplayName(t *testing.T) {
 		t.Skip("node not on PATH; cannot exercise the host attribution")
 	}
 	body := readAssetLF(t, "static/js/dialogs.js")
-	// sessionBelongsToNode, runningSessionsForNode and nodeState are contiguous:
-	// the slice runs from the first to the comment that opens the repaint helper.
+	// sessionBelongsToNode and runningSessionsForNode are contiguous: the slice runs
+	// from the first to the comment that opens the repaint helper.
 	state := between(t, body, "function sessionBelongsToNode(", "\n/** Repaint the node cards")
+	// The count checks below depend on skipping a subsystem's own session, and that
+	// rule lives with the plates (sessions.js reads it too): the page's own
+	// predicate comes along rather than a restatement of it.
+	sessions := readAssetLF(t, "static/js/sessions.js")
+	hidden := between(t, sessions, "function isHiddenSession(", "\n")
 
 	script := `
 const fs = require('fs');
@@ -293,48 +347,33 @@ check('a window for another session does not match',
 check('a stamped session ignores a foreign window',
   belongs({ id: 'e', name: 'session-e', ssh_config: 'staging' }, 'prod', [{ _connName: 'prod', _sid: 'e' }]), false);
 
-function stateFor(sessions, wins) {
-  sandbox.conns = [{ name: 'prod' }];
+function runningFor(sessions, wins) {
   sandbox.sessions = sessions;
   sandbox.wins = wins || [];
-  vm.runInContext('window._lastConnections = conns; window._lastSessionsSnapshot = sessions; window.wins = wins;', sandbox);
-  return vm.runInContext('nodeState(\'prod\')', sandbox);
-}
-function prime(connections, sessions) {
-  sandbox.connections = connections; sandbox.sessions = sessions;
-  vm.runInContext('window._lastConnections = connections; window._lastSessionsSnapshot = sessions; window.wins = [];', sandbox);
+  vm.runInContext('window._lastSessionsSnapshot = sessions; window.wins = wins;', sandbox);
+  // A string, because check() compares with ===.
+  return vm.runInContext('runningSessionsForNode("prod").map(function (s) { return s.id; }).join(",")', sandbox);
 }
 
-prime(null, null);
-check('before either list arrives the readout is reading',
-  vm.runInContext('nodeState(\'prod\')', sandbox), 'loading');
-
-// Never dialled: no evidence either way — NOT a claim that the machine is down.
-prime([{ name: 'prod' }], []);
-check('a profile with no session at all is not called offline', stateFor([], []), 'idle');
-
-// A retained DEAD session is evidence Termcp did reach it and no longer does.
-prime([{ name: 'prod' }], [{ id: 'z', name: 'anything', ssh_config: 'prod', status: 'exited' }]);
-check('a host Termcp has connected to before reads disconnected', stateFor([{ id: 'z', name: 'anything', ssh_config: 'prod', status: 'exited' }], []), 'offline');
-
-// Live work, and the dial that precedes it, still win.
-const live = [{ id: 'y', name: 'renamed-live', ssh_config: 'prod', status: 'running' }];
-prime([{ name: 'prod' }], live);
-check('a running session is online', stateFor(live, []), 'online');
-check('an open dial is connecting',
-  stateFor([], [{ _placeholder: true, _pendingConnName: 'prod' }]), 'connecting');
-
-// A session on another host must not colour this card either way.
-prime([{ name: 'prod' }], [{ id: 'w', name: 'prod', ssh_config: 'staging', status: 'exited' }]);
-check('another host\'s history does not make this one disconnected',
-  stateFor([{ id: 'w', name: 'prod', ssh_config: 'staging', status: 'exited' }], []), 'idle');
+// What the card counts: live sessions on THIS profile, and nothing else. A dead
+// session is history (the archive keeps it, the count does not), a session on
+// another host is another host's, and a subsystem's own connection — an
+// extension's session, which carries this profile's name — is not this node's
+// session to report.
+check('a running session is counted', runningFor([{ id: 'y', name: 'x', ssh_config: 'prod', status: 'running' }], []), 'y');
+check('an archived session is not', runningFor([{ id: 'z', name: 'x', ssh_config: 'prod', status: 'exited' }], []), '');
+check('another host is not counted', runningFor([{ id: 'w', name: 'prod', ssh_config: 'staging', status: 'running' }], []), '');
+check('a hidden session is not counted',
+  runningFor([{ id: 'h', name: 'ext:prod', ssh_config: 'prod', status: 'running', namespace: 'ext:prod' }], []), '');
+check('a legacy record falls back to its name',
+  runningFor([{ id: 'l', name: 'prod', status: 'running' }], []), 'l');
 
 console.log(bad === 0 ? 'ATTRIBUTION OK' : bad + ' attribution failure(s)');
 process.exit(bad === 0 ? 0 : 1);
 `
 	tmp := t.TempDir()
 	predicatePath := filepath.Join(tmp, "predicate.js")
-	if err := os.WriteFile(predicatePath, []byte(state), 0o600); err != nil {
+	if err := os.WriteFile(predicatePath, []byte(hidden+"\n"+state), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	scriptPath := filepath.Join(tmp, "predicate_test.js")
@@ -506,22 +545,61 @@ func TestNetHubIsAResponsiveResourceSidebar(t *testing.T) {
 	for _, want := range []string{
 		".workspace-frame.nethub-collapsed { --nethub-w: 56px; }",
 		"@media (max-width: 799px)",
-		"#sec-entries-body.drawer-open { transform: translateX(0); }",
+		`#sec-entries-body.drawer-open {
+    transform: translateX(0); visibility: visible;`,
 		".drawer-scrim { display: block; }",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("responsive NetHub layout must contain %q", want)
 		}
 	}
+	// The closed drawer is taken out of the page by visibility, not by trusting
+	// its transform to land: a transition whose end state is off-screen can be
+	// left at its start, which would park the drawer over the page it left.
+	// visibility must therefore ride on the closed rule, and must not itself be
+	// transitioned — a delayed flip stalls the same way and holds the pane
+	// visible for the slide it was meant to end.
+	if !strings.Contains(css, "transform: translateX(-100%); visibility: hidden;") ||
+		strings.Contains(css, "transition: transform .22s ease, visibility") {
+		t.Error("the closed drawer must be visibility:hidden with no transition on visibility, or a stalled slide leaves it over the page")
+	}
 	if !strings.Contains(dialogs, "localStorage.getItem(NETHUB_STATE_KEY)") ||
 		!strings.Contains(dialogs, "localStorage.setItem(NETHUB_STATE_KEY") {
 		t.Error("manual NetHub state should persist through the existing localStorage mechanism")
+	}
+	// The drawer scope must not write that preference: below the breakpoint the
+	// panel is an overlay, and closing an overlay is not a decision about how the
+	// desktop sidebar sits. Writing it there rails the column a wide screen later
+	// arrives at — the sidebar collapses for a choice made about a different
+	// shape of the same page.
+	if !strings.Contains(dialogs, "if (persist && !drawer)") {
+		t.Error("the NetHub preference must only be written above the drawer breakpoint")
+	}
+	// Crossing back out of the drawer scope keeps a drawer the user had open as
+	// the expanded column it becomes, so a rotation into a width whose default
+	// is the rail does not put away a panel the user was reading.
+	if !strings.Contains(dialogs, "var wasOpen = wasDrawer && body && body.classList.contains('drawer-open')") {
+		t.Error("crossing out of the drawer scope must keep an open drawer open as a column")
 	}
 	if !strings.Contains(forms, "toggleNetHub()") || !strings.Contains(forms, "window.termcpToggleEntriesDrawer") {
 		t.Error("the trigger and terminal header should use the shared NetHub state")
 	}
 	if strings.Contains(forms, "transform: translateX") || strings.Contains(forms, "document.body.style.overflow = open") {
 		t.Error("conn-form.js must not own a desktop drawer implementation")
+	}
+}
+
+// The extension panel answers the same collapse question NetHub does, and the
+// drawer scope must not reach into the desktop preference from this side
+// either: closing the overlay on a narrow screen would otherwise rail the
+// column a wide screen later arrives at.
+func TestExtensionPanelKeepsTheDrawerScopeOutOfThePreference(t *testing.T) {
+	ext := readAssetLF(t, "static/js/extensions.js")
+	if !strings.Contains(ext, "if (persist && !drawer)") {
+		t.Error("the extension preference must only be written above the drawer breakpoint")
+	}
+	if !strings.Contains(ext, "var wasOpen = wasDrawer && panel && panel.classList.contains('drawer-open')") {
+		t.Error("crossing out of the drawer scope must keep an open drawer open as a column")
 	}
 }
 
@@ -532,16 +610,25 @@ func TestNetHubCardsKeepNodeAndSessionHierarchy(t *testing.T) {
 	css := readAppCSS(t)
 	dialogs := readAssetLF(t, "static/js/dialogs.js")
 	for _, want := range []string{
-		"node-lamp", "node-proto", "node-status", "node-addr", "node-sess",
-		"nethub-rail-status", "nethub-rail-active", "nethub-rail-expand",
+		"node-proto", "node-addr", "node-sess",
+		"nethub-rail-item", "nethub-rail-active", "nethub-rail-expand",
 	} {
 		if !strings.Contains(css, want) || !strings.Contains(dialogs, want) {
 			t.Errorf("NetHub should paint %q in both the resource card and rail", want)
 		}
 	}
+	// The reachability verdict is out of this column: it was derived from the
+	// session list, which keeps archives and holds sessions no card shows, so it
+	// called a host dead for a history someone chose to keep. What a card reports
+	// is what Termcp is configured to do and what is running on it.
+	for _, dead := range []string{"nodeState", "nodeStatusLabel", "nodeStatusHint", "nethub-rail-status", "data-node-state"} {
+		if strings.Contains(dialogs, dead) || strings.Contains(css, dead) {
+			t.Errorf("NetHub still paints %q, the retired reachability readout", dead)
+		}
+	}
 	for _, want := range []string{
 		"runningSessionsForNode", "nodeSessionInfo", "nethub.sessions.one",
-		"nethub.sessions.other", "nodeProtocol(c)", "nodeStatusLabel(state)",
+		"nethub.sessions.other", "nodeProtocol(c)",
 	} {
 		if !strings.Contains(dialogs, want) {
 			t.Errorf("NetHub renderer misses %q", want)
@@ -566,15 +653,26 @@ func TestNetHubRegressionFixes(t *testing.T) {
 		t.Error("the rail must not append a second NetHub cluster glyph; the trigger already owns it")
 	}
 	if !strings.Contains(dialogs, "item.className = 'nethub-rail-item'") ||
-		!strings.Contains(dialogs, "class=\"nethub-rail-status is-") {
-		t.Error("the collapsed rail must still render node items and their status lamps")
+		strings.Contains(dialogs, "nethub-rail-status") {
+		t.Error("the collapsed rail renders node items by name; it carries no reachability lamp")
 	}
-	if !strings.Contains(css, ".nethub { position: relative; top: auto; z-index: auto; margin-bottom: 10px; }") {
+	// The margin the base rule gives .nethub on desktop is deliberately not part
+	// of what is pinned: on the narrow layout the two keys share one row, so a
+	// bottom margin on only one of them would push the workspace down alone. What
+	// has to survive is the stacking-context reset.
+	if !strings.Contains(css, ".nethub { position: relative; top: auto; z-index: auto;") {
 		t.Error("the narrow breakpoint must remove .nethub's stacking context so the drawer can outrank the scrim")
 	}
 	if !strings.Contains(css, "#sec-entries-body {\n    position: fixed") ||
-		!strings.Contains(css, "z-index: 24000") || !strings.Contains(css, "#sec-entries-body.drawer-open { transform: translateX(0); }") {
+		!strings.Contains(css, "z-index: 24000") || !strings.Contains(css, `#sec-entries-body.drawer-open {
+    transform: translateX(0); visibility: visible;`) {
 		t.Error("the narrow drawer must be fixed, high in the root stack, and open through its transform")
+	}
+	// Same guard as the base theme: the closed rack is gone by visibility, and
+	// visibility is not transitioned, so a slide that never advances cannot leave
+	// the rack sitting over the terminal.
+	if !strings.Contains(css, "transform: translateX(-100%); visibility: hidden;") {
+		t.Error("the closed rack must be visibility:hidden, or a stalled transition leaves it over the page")
 	}
 	// A node card is a host card with a status readout on it, not a different plate:
 	// it takes the state rail, the lit left gradient and the notched corner from the
@@ -651,6 +749,8 @@ func TestNetHubSidebarKeepsThePageFromScrolling(t *testing.T) {
 	for _, m := range []struct{ name, rule string }{
 		{"the panel", body},
 		{"the collapsed rail", between(t, css, ".workspace-frame.nethub-collapsed .nethub-rail {", "}")},
+		{"the extension column's plate", between(t, css, ".extpanel-body {", "}")},
+		{"the extension column's collapsed rail", between(t, css, ".workspace-frame.ext-collapsed .extpanel-rail {", "}")},
 	} {
 		want := fmt.Sprintf("calc(100dvh - %dpx)", chrome)
 		if !strings.Contains(m.rule, want) {
@@ -659,9 +759,12 @@ func TestNetHubSidebarKeepsThePageFromScrolling(t *testing.T) {
 		}
 	}
 
-	// One constant, two consumers. A second literal is how 134 and 147 coexisted.
-	if n := strings.Count(css, fmt.Sprintf("calc(100dvh - %dpx)", chrome)); n != 2 {
-		t.Errorf("expected the panel and the rail to share ONE chrome constant; found %d uses", n)
+	// One constant, four consumers. A second literal is how 134 and 147 coexisted;
+	// the extension column is a third column of the same frame and pays the same
+	// chrome, so both of its states take the literal rather than numbers of their
+	// own.
+	if n := strings.Count(css, fmt.Sprintf("calc(100dvh - %dpx)", chrome)); n != 4 {
+		t.Errorf("expected the panel, both rails and the extension column to share ONE chrome constant; found %d uses", n)
 	}
 	if strings.Contains(css, "100dvh - 134px") {
 		t.Error("134px is the old hand-count; the chrome is 147px (header 57 + dock padding 32 + gap 8 + trigger 50)")

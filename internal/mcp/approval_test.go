@@ -559,3 +559,98 @@ func TestApprovedOperationFailureReadsAsASentence(t *testing.T) {
 		t.Errorf("the message lost the reason: %q", msg)
 	}
 }
+
+// A session scoped to file operations must let a port forward run straight
+// through (issue #75). This is the direction that matters and the one nobody
+// writes a test for: a gate that checks "is review mode on" instead of "is this
+// kind held" holds the tunnel anyway, which looks identical from the UI (the lock
+// is on) and only shows up as an agent blocked from something it was allowed.
+func TestScopedReviewLetsUnscopedOperationsThrough(t *testing.T) {
+	s := newTestServer(t)
+
+	startReq := makeRequest(map[string]any{
+		"command":    testShell(),
+		"args":       testInteractiveShellArgs(),
+		"mode":       "pty",
+		"ssh_config": "internal",
+	})
+	startResult, err := s.handleStartSession(context.Background(), startReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := parseResult(t, startResult)
+	sessionID := m["session_id"].(string)
+
+	live := s.sessMgr.Get(sessionID)
+	if live == nil {
+		t.Fatal("session missing from the manager")
+	}
+	// Review the file operations only.
+	if err := live.EnableApprovalScoped(1, 0, []approval.Kind{
+		approval.KindFileWrite, approval.KindFileDelete,
+	}); err != nil {
+		t.Fatalf("EnableApprovalScoped: %v", err)
+	}
+
+	// A forward is not in the scope, so the gate must decline to hold it and the
+	// handler must run. `forward(action=list)` needs no tunnel and returns OK, so
+	// it is a safe probe for "the gate let this through".
+	res, held := s.gateOperation(context.Background(), makeRequest(map[string]any{
+		"action":     "list",
+		"session_id": sessionID,
+	}), "forward", sessionID)
+	if held {
+		t.Fatal("a session scoped to file operations must not hold a port forward")
+	}
+	if res != nil {
+		t.Fatalf("the gate returned a result for an operation it did not hold: %v", res)
+	}
+
+	// A file write IS in the scope, so it must be held.
+	if _, held := s.gateOperation(context.Background(), makeRequest(map[string]any{
+		"session_id":  sessionID,
+		"remote_path": "/tmp/gated",
+		"data":        "x",
+	}), "file_write", sessionID); !held {
+		t.Fatal("a file write is in the scope and must be held")
+	}
+
+	// And with no scopes, the forward is held again — the default is unchanged.
+	if err := live.EnableApproval(1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, held := s.gateOperation(context.Background(), makeRequest(map[string]any{
+		"action":     "list",
+		"session_id": sessionID,
+	}), "forward", sessionID); !held {
+		t.Fatal("with no scopes the forward must be held again")
+	}
+}
+
+// Opening and closing a tunnel are separate decisions, so a session can hold one
+// without the other. Checking only "forward" would hold both.
+func TestForwardOpenAndCloseAreSeparatelyScopeable(t *testing.T) {
+	s := newTestServer(t)
+	startReq := makeRequest(map[string]any{
+		"command": testShell(), "args": testInteractiveShellArgs(),
+		"mode": "pty", "ssh_config": "internal",
+	})
+	startResult, err := s.handleStartSession(context.Background(), startReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID := parseResult(t, startResult)["session_id"].(string)
+	live := s.sessMgr.Get(sessionID)
+	if err := live.EnableApprovalScoped(1, 0, []approval.Kind{approval.KindForwardClose}); err != nil {
+		t.Fatal(err)
+	}
+
+	open := makeRequest(map[string]any{"action": "local", "session_id": sessionID, "remote_port": 80})
+	if _, held := s.gateOperation(context.Background(), open, "forward", sessionID); held {
+		t.Error("opening a tunnel is not in scope but was held")
+	}
+	closeReq := makeRequest(map[string]any{"action": "close", "session_id": sessionID, "forward_id": "x"})
+	if _, held := s.gateOperation(context.Background(), closeReq, "forward", sessionID); !held {
+		t.Error("closing a tunnel is in scope and must be held")
+	}
+}

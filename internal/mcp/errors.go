@@ -57,8 +57,13 @@ const (
 	CodeConflict            = "conflict"
 	CodeNotConfigured       = "not_configured"
 	CodeConnectionFailed    = "connection_failed"
-	CodeOperationFailed     = "operation_failed"
-	CodeInternalError       = "internal_error"
+	// CodeForbidden is what a restricted (extension) session returns when a tool
+	// or path is outside the whitelist its template defined. It is a policy
+	// refusal, not a missing object: the session exists and is running, the call
+	// is simply not one this session was created to serve.
+	CodeForbidden       = "forbidden"
+	CodeOperationFailed = "operation_failed"
+	CodeInternalError   = "internal_error"
 )
 
 // toolError builds a failed tool result whose text content is a JSON object

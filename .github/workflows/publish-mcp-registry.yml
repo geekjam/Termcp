@@ -37,6 +37,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # An rc tag must not move :latest - a pre-release is an internal test
+      # build, and "latest" is what every deployment pulls. The image is still
+      # built and pushed under its rc version so testers can pin it.
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -44,7 +47,7 @@ jobs:
           images: ghcr.io/open-mcp-ai/termcp
           tags: |
             type=semver,pattern={{version}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc.') }}
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -60,10 +63,13 @@ jobs:
         run: |
           curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
 
+      # An rc never reaches the registry: server.json still names the last final
+      # release (release_metadata.py enforces that), so publishing from an rc tag
+      # would announce the previous version against an rc image.
       - name: Authenticate to MCP Registry
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-rc.')
         run: ./mcp-publisher login github-oidc
 
       - name: Publish server to MCP Registry
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-rc.')
         run: ./mcp-publisher publish

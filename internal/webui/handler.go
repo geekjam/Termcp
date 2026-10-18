@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/open-mcp-ai/termcp/internal/approval"
+	"github.com/open-mcp-ai/termcp/internal/extensions"
 	"github.com/open-mcp-ai/termcp/internal/forward"
 	"github.com/open-mcp-ai/termcp/internal/message"
 	"github.com/open-mcp-ai/termcp/internal/notify"
@@ -74,8 +75,12 @@ type Handler struct {
 	SSH              *sshconfig.Store
 	ForwardMgr       *forward.ForwardManager
 	NotifyMgr        *notify.Manager // active shell notification rules (read-only listing + delete)
-	NoInternal       bool            // when true, hide and refuse the built-in loopback profile
-	Version          string          // build version (`termcp -version`), served at GET /api/version
+	// Extensions drives the right-side panel: it lists the pinned,
+	// capability-trimmed sessions and reports whether each is up. nil in a build
+	// that does not run the reconciler, in which case the panel is simply empty.
+	Extensions *extensions.Reconciler
+	NoInternal bool   // when true, hide and refuse the built-in loopback profile
+	Version    string // build version (`termcp -version`), served at GET /api/version
 
 	// Daemon marks this process as a background instance (started with
 	// `termcp daemon start` or `termcp daemon stdio`): it may carry an idle
@@ -102,6 +107,22 @@ type Handler struct {
 
 	sessHub   *sessionListHub
 	notifyHub *uiNotifyHub
+
+	// viewers tracks the Web UI tabs currently attached (see viewers.go), so the
+	// page can show who is watching. Created on first use.
+	viewers    *viewerRegistry
+	viewerOnce sync.Once
+
+	// MCPConnections lists the MCP clients attached to the MCP server (see
+	// internal/mcp/connections.go). Wired by main to server.Connections; nil when
+	// no MCP server exists, in which case GET /api/clients returns no MCP rows.
+	//
+	// It returns []any rather than []mcp.Connection so this package does not
+	// import internal/mcp: that package's tests load this one's embedded assets
+	// (internal/mcp/docs_test.go), and an import in this direction would close a
+	// cycle Go rejects. The values are still mcp.Connection — the page sees JSON
+	// either way.
+	MCPConnections func() []any
 }
 
 // Register mounts /api/... and / (HTML/CSS/JS via embed.FS + http.FileServer).
@@ -131,8 +152,19 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	if h.SSH != nil {
 		h.SSH.SetOnChange(h.sessionHub().broadcast)
 	}
+	if h.Extensions != nil {
+		// An extension's status transition is what the right panel renders, so it
+		// rides the same signal as a connection change: every tab refetches.
+		h.Extensions.SetOnChange(h.sessionHub().broadcast)
+	}
 	// Build metadata
 	mux.HandleFunc("GET /api/version", h.handleVersion)
+	// Who is attached to this instance: MCP clients and Web UI tabs. Not the SSH
+	// profiles of GET /api/connections — those are hosts to connect to.
+	mux.HandleFunc("GET /api/clients", h.handleListClients)
+	// Recent agent and human actions across every session, newest first. Derived
+	// from the per-shell marks the terminal timeline already reads.
+	mux.HandleFunc("GET /api/activity", h.handleActivity)
 	// Daemon management (`termcp daemon status|start|stop`): an instance is
 	// found and stopped purely over HTTP, wherever it listens.
 	mux.HandleFunc("GET /api/daemon", h.handleDaemonInfo)
@@ -149,6 +181,21 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/connections/{name}", h.handlePutConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", h.handleDeleteConnection)
 	mux.HandleFunc("POST /api/connections/test", h.handleTestConnection)
+
+	// Extensions (the right panel): templates for pinned, capability-trimmed
+	// sessions with the reconciler's live status on each. The authoring routes
+	// write through the same store the MCP `extension` tool uses, so a template
+	// saved from the browser and one saved by an agent are indistinguishable, and
+	// the batch pair is the panel's export and import — one document holding many
+	// templates, the same shape in both directions.
+	mux.HandleFunc("GET /api/extensions", h.handleListExtensions)
+	mux.HandleFunc("POST /api/extensions", h.handleCreateExtension)
+	mux.HandleFunc("GET /api/extensions/batch", h.handleExportExtensions)
+	mux.HandleFunc("POST /api/extensions/batch", h.handleImportExtensions)
+	mux.HandleFunc("GET /api/extensions/{name}", h.handleGetExtension)
+	mux.HandleFunc("PUT /api/extensions/{name}", h.handleUpdateExtension)
+	mux.HandleFunc("DELETE /api/extensions/{name}", h.handleDeleteExtension)
+	mux.HandleFunc("POST /api/extensions/{name}/retry", h.handleRetryExtension)
 
 	// Sessions
 	mux.HandleFunc("GET /api/sessions", h.handleListSessions)
@@ -223,12 +270,16 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		mux.Handle("/", embeddedStaticServer())
 	} else {
 		// Pure-API build (go build -tags no_webui): the browser UI is neither
-		// embedded nor routed. The two agent documents stay, each on its own
-		// path; everything else under / is a 404.
+		// embedded nor routed. The three agent documents stay, each on its own
+		// path; everything else under / is a 404. The extension guide is one of
+		// them because the extension tool is always registered — a build that
+		// hands out the tool but not its guide is telling an agent to read a
+		// document it cannot fetch.
 		docs := embeddedStaticServer()
 		mux.Handle("/api.md", docs)
 		mux.Handle("/SKILL.md", docs)
 		mux.Handle("/skills.md", docs)
+		mux.Handle("/extensions.md", docs)
 	}
 }
 

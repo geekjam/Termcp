@@ -39,6 +39,11 @@ var docResources = []docResource{
 		name:        "termcp HTTP skill (curl recipes)",
 		description: "Agent skill for driving termcp over HTTP with curl + jq only: session lifecycle, output polling (live and closed sessions), input/keys/resize, files, forwards, pitfalls. Installable into a skills directory.",
 	},
+	{
+		path:        "extensions.md",
+		name:        "termcp extensions guide",
+		description: "The extension layer: pinned, capability-trimmed sessions (MCP servers, read-only skill windows, prompt terminals) termcp keeps warm and hands you handles for. Read before using extension(action=list) results or authoring a template: statuses, how to drive each kind, the allow/paths restriction contract, failure stages.",
+	},
 }
 
 // SetDocsFS attaches the embedded documentation FS (webui.Assets()). Call

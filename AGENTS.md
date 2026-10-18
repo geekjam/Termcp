@@ -25,10 +25,21 @@ Project docs live under `docs/` (`docs/mcp-tools.md`, `docs/api.md`, `docs/archi
 
 ### Releases
 
-Use the release PR process in `docs/releasing.md` before tagging. Give the PR
-a `release/vX.Y.Z` head branch or `release: vX.Y.Z` title, run
-`make prepare-release RELEASE_VERSION=vX.Y.Z`, and review the generated
-changelog and `server.json` changes. CI checks both files before merge.
+`dev` is the rebased development line; `main` only receives release PRs. Use
+the process in `docs/releasing.md` before tagging. Write the `## Unreleased`
+notes **before** cutting the release — one short paragraph per user-visible
+change since the last release, not a design note; `make prepare-release` only
+moves them. Give the PR a `release/vX.Y.Z` head branch or `release: vX.Y.Z`
+title, run `make prepare-release RELEASE_VERSION=vX.Y.Z`, and review the
+generated changelog and `server.json` changes. CI checks both files before
+merge.
+
+A `vX.Y.Z-rc.N` tag is an internal test build: it adds a dated changelog
+section, **leaves `server.json` alone** (no registry entry, no `:latest` move)
+and is marked as a GitHub pre-release. Its branch and PR name the rc itself
+(`release/v0.2.8-rc.1`), because CI requires the release signal to match the
+files exactly — the final release is its own PR (`release/v0.2.8`).
+`docs/releasing.md` has the details.
 
 ### Tests run in CI on three OSes
 

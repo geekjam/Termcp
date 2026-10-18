@@ -145,6 +145,16 @@ function connectUIWebSocket() {
         // Notification rules share this wake signal (notify.Manager onChange →
         // sessionHub.broadcast), so keep the rule panels in sync too.
         loadNotifications();
+        /* The extension panel rides the same frame: the reconciler broadcasts
+           through the same hub, so an extension reaching available appears on
+           the page the moment it happens rather than on the next poll. The
+           branch is guarded on the key rather than the panel, so a frame that
+           carries no extensions leaves a panel that is already hidden alone. */
+        if (j.extensions) renderExtensionGrid(j.extensions);
+        /* Who is attached. Both lists ride this frame because both change for the
+           same reason a session does — a client attached, a tab opened — and the
+           server already wakes this loop for those. */
+        if (j.clients || j.mcp_clients) renderClients(j.mcp_clients, j.clients);
       }
       else if (j.type === 'terminal') {
         /* One window lookup per frame, not two: this branch runs once per output
@@ -237,6 +247,12 @@ function connectUIWebSocket() {
     // A page that loads while commands are already queued must show them: the
     // push events for those requests happened before this tab existed.
     refreshApprovalCounts();
+    /* The cyberware column renders from the sessions frame, but only when a
+       reconciler is running — a frame from a Termcp without one carries no
+       extensions key at all. The column is in the markup either way, so it is
+       given its own one-shot read rather than waiting on a key that may never
+       come. loadExtensionsOnce paints nothing a frame has not already painted. */
+    if (typeof loadExtensionsOnce === 'function') loadExtensionsOnce();
   };
 
   ws.onerror = function () {};

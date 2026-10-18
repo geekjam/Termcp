@@ -133,6 +133,15 @@ the WebSocket. One shared `internal/auth` middleware guards the whole mux. Missi
 wrong credentials return `401 Unauthorized` with `WWW-Authenticate: Basic` (browsers
 show their native login prompt).
 
+A valid token is not the only gate. A session created by an **extension** carries a
+capability whitelist (`allow` / `paths`), and it is enforced on this surface too — a
+call outside it answers `403` with `{"error_code":"forbidden", ...}` instead of
+performing the work. The list is the same one the MCP tools honour, under the same
+names, so `shell_input`, `file_read`, and the rest mean the same thing whichever
+transport you use; a route that mirrors a gated tool is gated with it. There is no
+point retrying: use `extension(action=get)` to read what the template permits, or
+ask the operator to widen it.
+
 | Caller | Credentials |
 |--------|-------------|
 | REST / MCP / curl | `Authorization: Bearer <token>` |
@@ -301,6 +310,24 @@ selection containing only temporary or missing profiles returns an empty
 `connections` array. Naming `internal` in `names` is refused with `400` — export
 of the built-in profile does not exist.
 
+**Password-protected export.** Send `X-Termcp-Password: <password>` and the
+response is sealed with it instead of being plain TOML: `Content-Type:
+application/x-termcp-encrypted`, filename `termcp-connections.enc`. The file is
+an envelope (`TERMCP-ENC 1` header, then base64 of salt ‖ nonce ‖
+AES-256-GCM ciphertext, 64-column wrapped) so it survives mail and chat, and it
+is recognisable as encrypted — an operator who tries to import it without the
+password is told to supply one instead of seeing a TOML parse error. The key is
+PBKDF2-HMAC-SHA256 at 600 000 iterations; nothing in the file is readable
+without the password.
+
+A header rather than a query parameter: a URL lands in shell history, proxy logs
+and browser history, so a password in one is leaked by the same act that used it.
+No header = the plain TOML export this route has always produced.
+
+This is export/import protection only. It is **not** at-rest encryption of the
+stored configuration: that is a separate problem (OS keychain, container
+fallback, invisible to the user).
+
 ### `POST /api/connections/batch?temporary=false`
 
 Imports a TOML file. Send its bytes as the request body (`Content-Type:
@@ -308,7 +335,15 @@ application/toml`). Set `temporary=true` to keep **all** imported profiles only
 in memory. The upload limit is 16 MiB. Existing names, case-insensitive
 duplicates, and the reserved `internal` name receive a unique `-2`, `-3`, …
 suffix; existing profiles are never overwritten. Invalid profiles reject the
-whole import before any profile is added. The format is the same for import and
+whole import before any profile is added.
+
+An **encrypted** export imports the same way, with the password in
+`X-Termcp-Password`. Missing password → `401` naming the header; wrong password
+or a modified file → `400` (the two are indistinguishable by design — GCM
+authenticates, it does not identify). A plain TOML document needs no password
+and keeps working, so old exports stay importable.
+
+The format is the same for import and
 export:
 
 ```toml
@@ -514,6 +549,14 @@ A session record also carries `ssh_config` (the profile it was created from), a
 non-secret label added for host attribution. It is separate from `name` because
 the display name is user-editable: the NetHub reads it to decide which host a
 session belongs to, so a renamed session keeps its lamp.
+
+A record may also carry `namespace` (absent on ordinary sessions). It marks a
+session a subsystem owns rather than one a caller asked for: the extension layer
+keeps one connection per host and serves its extensions through channels in it,
+so those sessions are reported in the extension column (section 15) instead of as
+session or archive cards. They are still addressable everywhere an id is
+accepted — an extension hands out `{session_id, shell_id}` — but they are not
+listed by the MCP `session_list`, and the Web UI hides their cards.
 
 Session records carry no `pid`, for the reason given under `POST /api/sessions`.
 
@@ -1119,6 +1162,9 @@ Downloads a file. Supports HTTP Range.
 | Parameter | Type | Meaning |
 |-----------|------|---------|
 | `path` | query | File path |
+| `h.<Name>` | query | Response header the download must carry, e.g. `?h.Content-Disposition=attachment%3B+filename%3D%22x.png%22`. Repeatable; `file_urls` folds its `response_headers` argument into the URL this way. |
+
+Framing headers (`Content-Length`, `Content-Range`, `Transfer-Encoding`, `Connection`, `Trailer`) belong to the stream and cannot be requested; a requested own header overrides the default one (a requested `Content-Disposition` replaces the `attachment; filename=` the server would send).
 
 ```
 Response: application/octet-stream (Range/206 Partial Content supported)
@@ -1356,6 +1402,43 @@ those are transient UI events, including the review notifications above. An empt
 tab next to a toast you just saw is therefore correct, and the empty state says so
 rather than leaving it ambiguous.
 
+### What review holds: `scopes`
+
+By default review holds **every** gated kind: command lines, the file operations
+that change a host, and port forwards. That is the model it started with, and an
+empty scope list still means exactly that.
+
+A deployment that wants a narrower gate names the kinds instead (issue #75):
+
+```
+PATCH /api/sessions/{id}/approval
+{ "enabled": true, "scopes": ["file_write", "file_delete"] }
+```
+
+Valid scopes are `shell_input`, `file_write`, `file_delete`, `file_rename`,
+`file_mkdir`, `file_perm`, `file_link`, `file_truncate`, `forward_open`,
+`forward_close`. Opening and closing a tunnel are separate names because they are
+separate decisions.
+
+Two rules make the narrowing trustworthy:
+
+- **An unknown name is an error**, never a silent drop. A misspelled scope that
+  quietly did nothing would leave the operator believing an operation is gated
+  when it is not — the one failure a gate must not have.
+- **Anything outside the scope passes through untouched.** A session scoped to
+  file writes lets `forward` run, and lets the operator type; a session scoped to
+  `shell_input` holds the agent's commands and nothing else. This direction is
+  the one that is easy to get wrong (a gate that checks "is review mode on"
+  instead of "is this kind held" looks identical in the UI) and it is what the
+  tests pin.
+
+Reads are never held at any scope: listing a directory or reading a file changes
+nothing, and gating it would train a reviewer to accept without reading.
+
+`GET /api/sessions/{id}/approval` reports the scope in force as `"all"` or the
+list, so a reloaded page draws the same lock. The session snapshot carries it as
+`approval_scopes` (empty for "all").
+
 ### One reviewer
 
 Whoever turns review on is the reviewer, and one approval is enough. There is no
@@ -1574,6 +1657,78 @@ Response 200:
 { "version": "v0.2.4" }
 ```
 
+### `GET /api/activity`
+
+Recent agent and human actions across **every** session, newest first — the "what
+did the agent do, and when?" view (issue #110). It is derived entirely from the
+per-shell marks the terminal timeline already reads (`log.jsonl`): nothing new is
+recorded, and there is no second copy of the log.
+
+Each row names the session and shell, the millisecond, who acted (`ai`, `human`,
+or `system` for a review transition), what happened, and the byte offset where
+the action's output begins — so a row leads to the exact transcript bytes.
+
+Output spans are **not** in the feed. Every command produces output, and a single
+`find` can print thousands of lines; including them would bury the handful of rows
+a reader cares about. Follow `bytes` into `shell_output` or the REST range route to
+see the result.
+
+Query parameters: `limit` (default 200, max 2000), `since_ms` (page forward without
+re-reading), `session_id` (narrow to one session). An invalid value is `400` rather
+than being silently defaulted.
+
+```
+GET /api/activity?limit=50
+
+Response 200:
+{
+  "activity": [
+    { "time": "2026-10-17T08:12:04Z", "unix_ms": 1760689924000,
+      "session_id": "sess-1", "session_name": "prod", "shell_id": "sh-1",
+      "source": "ai", "kind": "a", "verdict": "input", "bytes": 4096 }
+  ]
+}
+```
+
+> Token consumption is **not** reported. termcp never sees an agent's tokens —
+> the model client does — so any number here would be invented.
+
+### `GET /api/clients`
+
+Reports who is attached to this instance — the question "who is driving it right
+now?". Two lists, because they are two different things:
+
+- `mcp` — MCP clients (agents). `name`/`version` are what the client announced in
+  its `initialize` request and are empty when it announced nothing (the MCP spec
+  makes `clientInfo` optional); `namespace` is the claim it made with
+  `X-Termcp-Namespace`, when it made one; `session_id` is the transport session
+  id, not a termcp session id. Rows come from mcp-go's session hooks, so a row
+  exists exactly as long as the client holds a live MCP session.
+- `webui` — browser tabs holding the Web UI socket: the address they came from
+  (port stripped), their user agent, how many sessions they are streaming, and
+  when they attached. A closed tab disappears. Plain HTTP callers are not listed:
+  a request has no lifetime, so listing one would report "someone was here" as
+  "someone is connected".
+
+Distinct from `GET /api/connections`, which lists the stored SSH **profiles** —
+the hosts you can connect to, not the callers connected here.
+
+```
+GET /api/clients
+
+Response 200:
+{
+  "mcp": [
+    { "session_id": "7f3c...", "name": "claude-ai", "version": "0.1.0",
+      "namespace": "ns:alice", "connected_at": "2026-10-17T08:12:04Z" }
+  ],
+  "webui": [
+    { "id": "1", "addr": "10.0.0.5", "user_agent": "Mozilla/5.0 ...",
+      "watching": 3, "since": "2026-10-17T08:10:00Z" }
+  ]
+}
+```
+
 ### `GET /api/daemon`
 
 Reports what instance this is: whether it runs as a daemon (a detached instance
@@ -1653,3 +1808,98 @@ paths above.
 > the registry as a DEAD, read-only entry). To erase it for good use
 > `DELETE /api/sessions/{id}`. All three routes accept a comma-separated id
 > list (batch) and then answer 200 with per-id results — see section 6.
+
+## 15. Extensions
+
+An extension is a stored template for a session whose capabilities are trimmed to
+what the template's author decided (an MCP server over a pipe shell, a read-only
+file window, an interactive terminal). termcp keeps every enabled extension's
+session warm; extensions that dial the same profile with the same whitelist share
+one session and each drives its own shell channel in it. The same templates are
+authorable over MCP with the `extension` tool — these routes are its REST twin,
+writing the same files in `<data>/extensions/<name>/config.toml`.
+
+### `GET /api/extensions`
+
+Lists every extension with its reconciler status.
+
+```
+Response 200:
+{
+  "extensions": [
+    { "name": "docs", "kind": "skill", "target": "internal", "description": "docs tree",
+      "enabled": true, "status": "available", "session_id": "8f2c1b", "shell_id": "3a91d0" }
+  ]
+}
+```
+
+A row carries `session_id`/`shell_id` when the extension is available (the handles
+to drive it through), `forwards` with the address each declared tunnel bound, and
+`failure` + `next_retry_ms` when it is not. `status` is one of `available`,
+`probing`, `unavailable`, `disabled`.
+
+### `GET /api/extensions/{name}`
+
+One template in full: the shape (`kind`, `target`, `mode`, `command`, `args`), the
+whitelist (`allow`, `paths`), the `notes`, and the failure history.
+
+With `?format=toml` the answer is the file itself (`application/toml`): the text
+`<data>/extensions/<name>/config.toml` holds, so the Web UI's file view edits
+exactly what the store would read back.
+
+### `POST /api/extensions`
+
+Creates a template. `name` and `target` are required; `kind` picks the preset that
+fills the rest (`mcp`, `skill`, `prompt`, or `custom`). Responds `201`, or `409`
+when the name is taken.
+
+### `PUT /api/extensions/{name}`
+
+Patches a stored template: an **omitted** field keeps its value, an **empty array**
+clears it. `PATCH`-style semantics on `PUT`, matching what the MCP tool does.
+
+A body sent as `application/toml` (or `text/plain`) is the file view instead: the
+document replaces the template as written, and nothing is defaulted — what the
+file says is what the template is. A document carrying a `name` key that is not the
+name in the path is refused (`400`), because the name is the directory.
+
+### `DELETE /api/extensions/{name}`
+
+Removes the template (`204`). The session kept warm for it is closed once no other
+extension is served by it.
+
+`{name}` may be a comma-separated batch (`a,b,c`) like the session and profile
+routes: every name is removed independently, the answer is `200` with a per-name
+`results` array instead of `204`, and one bad entry does not stop the rest —
+`extension_not_found` counts as cleared, since another client got there first.
+
+### `POST /api/extensions/{name}/retry`
+
+Reconnects an unavailable extension now instead of waiting out its backoff.
+Answers 200 with `{ "ok": true }` or `{ "ok": false, "error": ... }`.
+
+### `GET /api/extensions/batch`
+
+The export: one TOML document holding the named extensions (`?names=a,b`), or
+every stored one when no names are given. A name that no longer resolves is
+skipped rather than failing the download, so a selection captured in a stale tab
+still exports what remains.
+
+```toml
+[[extensions]]
+name = "docs"
+kind = "skill"
+target = "internal"
+paths = ["~/skills/docs/"]
+```
+
+### `POST /api/extensions/batch`
+
+The import: a document in exactly the shape the export produces. Every entry is
+validated before anything is written, so an invalid file imports nothing. Names
+already in use are renamed rather than overwritten — up to the first free
+`-N` suffix — and the response lists them:
+
+```
+Response 201: { "imported": 2, "renamed": [ { "from": "docs", "to": "docs-2" } ] }
+```

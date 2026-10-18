@@ -28,7 +28,7 @@
            (same border, radius and blue label) and shows the language in use;
            the menu below it marks that same choice. -->
       <details class="theme-switch" id="theme-switch">
-        <summary class="theme-btn" data-i18n-title="theme.label" title="Theme"><span aria-hidden="true">◐</span> <span data-i18n="theme.label">Theme</span><span id="theme-current"></span></summary>
+        <summary class="theme-btn" data-i18n-title="theme.label" title="Theme"><span aria-hidden="true">◐</span> <span class="theme-label" data-i18n="theme.label">Theme</span><span class="theme-current" id="theme-current"></span></summary>
         <div class="theme-menu"><div id="theme-options" class="theme-options"></div><p id="theme-status" class="theme-status" role="status"></p></div>
       </details>
       <span class="lang-switch">
@@ -45,6 +45,17 @@
           <button type="button" class="lang-opt" data-lang="zh-Hant" onclick="chooseLang('zh-Hant')">繁中</button>
         </span>
       </span>
+      <!-- Who is connected to this instance (MCP clients and Web UI tabs). A
+           details/summary like the theme switch beside it: the content is a small
+           list that is only interesting on demand, and closing it needs no JS.
+           No count badge: the number of clients is a question the panel answers
+           when it is opened, and a badge that is usually 0 or 1 is one more thing
+           in the header asking to be read. The label is the whole trigger, and it
+           is the first thing to go on a narrow header (see workspace.css). -->
+      <details class="clients-menu" id="clients-menu">
+        <summary class="clients-btn" data-i18n-title="clients.label" title="Connected clients"><span class="clients-icon" aria-hidden="true"></span><span class="clients-label" data-i18n="clients.label">Clients</span></summary>
+        <div class="clients-panel"><div id="clients-body" role="list"></div><p id="clients-empty" class="clients-empty" data-i18n="clients.empty">Nothing connected yet.</p></div>
+      </details>
       <a href="api.html" class="api-nav-link" title="MCP, HTTP API and Agent skill integration docs" data-i18n-title="nav.api.title" aria-label="MCP, HTTP API and Agent skill integration docs" data-i18n-aria="nav.api.title">
         <svg class="api-nav-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M2.25 2.5h3.1c1.13 0 2.05.92 2.05 2.05v8.2c-.5-.62-1.22-.98-2.05-.98h-3.1z"/>
@@ -71,7 +82,7 @@
          layout frame rather than a child of it — a fixed element inside a
          grid/backdrop context would resolve against that ancestor instead of the
          viewport. -->
-    <div class="workspace-frame">
+    <div class="workspace-frame ext-on">
       <!-- NetHub is the page's control layer: the access nodes Termcp can dial
            are a persistent left column, not a drawer. Collapsing it leaves a rail
            of status dots rather than nothing, so "which machines can I reach" is
@@ -107,10 +118,10 @@
                  inside the clipped element it was sliced off the moment it
                  opened, so the menu is a sibling of this plate below. -->
             <div class="nethub-open-plate">
-              <button type="button" id="nethub-batch-open" title="Open a session for each selected host" data-i18n-title="nethub.batch.openTitle" aria-label="Open selected hosts" data-i18n-aria="nethub.batch.openTitle">
+              <button type="button" class="batch-open-main" id="nethub-batch-open" title="Open a session for each selected host" data-i18n-title="nethub.batch.openTitle" aria-label="Open selected hosts" data-i18n-aria="nethub.batch.openTitle">
                 <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.14v13.72c0 .8.88 1.29 1.56.86l10.8-6.86a1.03 1.03 0 000-1.72L9.56 4.28A1.03 1.03 0 008 5.14z" fill="currentColor"/></svg>
               </button>
-              <button type="button" id="nethub-open-caret" aria-haspopup="menu" aria-expanded="false" title="More actions" data-i18n-title="nethub.batch.more" aria-label="More actions" data-i18n-aria="nethub.batch.more">
+              <button type="button" class="batch-open-caret" id="nethub-open-caret" aria-haspopup="menu" aria-expanded="false" title="More actions" data-i18n-title="nethub.batch.more" aria-label="More actions" data-i18n-aria="nethub.batch.more">
                 <svg viewBox="0 0 12 8" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 2l5 4 5-4"/></svg>
               </button>
             </div>
@@ -201,7 +212,83 @@
         </div>
       </div>
       </div>
-    </div>
+      <!-- The extension column: the connections panel's other side, holding the
+           trimmed sessions Termcp keeps warm instead of the machines it dials.
+           It starts hidden and the frame's .ext-on class is what gives it a
+           grid track, so a Termcp with no extensions configured has the same
+           layout it had before this panel existed. The column collapses to a
+           rail of status lamps like NetHub does, and below 800px the same
+           element is the drawer the trigger opens. The cards are built by
+           extensions.js from the socket frame; nothing here is static but the
+           trigger's own label, and the column carries its own toolbar because
+           the panel reports AND authors: the New key and each card's edit and
+           delete write the same store the extension tool writes to. -->
+      <aside class="extpanel" id="extpanel">
+        <button type="button" class="extpanel-btn" id="extpanel-toggle" title="Extensions" data-i18n-title="nav.extensions" aria-label="Extensions" data-i18n-aria="nav.extensions" aria-controls="extpanel-body" aria-expanded="true" onclick="event.stopPropagation()">
+          <span class="extpanel-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="1.5" width="8" height="8" rx="1.5"/><rect x="6.5" y="6.5" width="8" height="8" rx="1.5"/><path d="M4 14.5v1.5M14.5 4H16"/></svg></span>
+          <span class="extpanel-label" data-i18n="nav.extensions">Extensions</span>
+          <span class="extpanel-caret" aria-hidden="true"><svg viewBox="0 0 12 8" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M1 2l5 4 5-4"/></svg></span>
+        </button>
+        <div class="extpanel-rail" id="extpanel-rail" role="list" aria-label="Extensions" data-i18n-aria="nav.extensions"></div>
+        <div class="extpanel-body" id="extpanel-body">
+          <button type="button" class="drawer-close" title="Close" data-i18n-title="common.close" aria-label="Close extensions drawer" data-i18n-aria="common.close" onclick="event.stopPropagation(); window.termcpToggleExtensions && window.termcpToggleExtensions(false)">
+            <svg viewBox="0 0 12 12" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2L2 10"/></svg>
+          </button>
+          <!-- The batch row, worn by the connections panel's other side: the same
+               keys, the same rules (workspace.css dresses both), and each column's
+               own ancestor class (.ext-selecting here, .nethub-selecting there) is
+               what reveals its keys — so one column entering select mode never
+               lights up the other's toolbar. Untoggled, a card click opens the
+               extension's status CARD; toggled, it ticks and the batch keys
+               appear: ▶ opens the CARDS of the selection — their status, side by
+               side, which is the one "open" an extension has (a host's ▶ dials the
+               session it names; an extension's session is already up) — then
+               export the selection as TOML, and delete it in one batch. -->
+          <div class="drawer-toolbar" role="toolbar">
+            <button type="button" class="nethub-select-toggle" id="ext-select-toggle" aria-pressed="false" title="Batch select" data-i18n-title="nethub.batch.selectTitle" aria-label="Batch select" data-i18n-aria="nethub.batch.select" onclick="event.stopPropagation()">
+              <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><path d="M3.1 4.1l1.1 1.1 2.2-2.4"/><path d="M9.5 4h5"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><path d="M9.5 12h5"/></svg>
+              <span class="nethub-toggle-count" id="ext-toggle-count" hidden>0</span>
+            </button>
+            <button type="button" class="nethub-batch-icon" id="ext-sel-invert" title="Select all" data-i18n-title="section.batch.selectAll" aria-label="Select all or clear selection" data-i18n-aria="section.batch.selectAllAria" onclick="event.stopPropagation()">
+              <svg class="ic-hollow" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.4l4.6 4.6L19 7.2"/></svg>
+              <svg class="ic-solid" viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M20.3 6.9L9.4 17.8l-5.7-5.7 1.4-1.4 4.3 4.3 9.5-9.5z" fill="currentColor"/></svg>
+            </button>
+            <div class="nethub-open-split" id="ext-open-split">
+              <div class="nethub-open-plate">
+                <button type="button" class="batch-open-main" id="ext-batch-open" title="Open the status of each selected extension" data-i18n-title="ext.batch.openTitle" aria-label="Open selected extensions" data-i18n-aria="ext.batch.openTitle">
+                  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M8 5.14v13.72c0 .8.88 1.29 1.56.86l10.8-6.86a1.03 1.03 0 000-1.72L9.56 4.28A1.03 1.03 0 008 5.14z" fill="currentColor"/></svg>
+                </button>
+                <button type="button" class="batch-open-caret" id="ext-open-caret" aria-haspopup="menu" aria-expanded="false" title="More actions" data-i18n-title="nethub.batch.more" aria-label="More actions" data-i18n-aria="nethub.batch.more">
+                  <svg viewBox="0 0 12 8" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 2l5 4 5-4"/></svg>
+                </button>
+              </div>
+              <div class="nethub-open-menu" id="ext-open-menu" role="menu" aria-label="Batch actions" data-i18n-aria="nethub.batch.menuAria" hidden>
+                <button type="button" class="nethub-menu-item" id="ext-menu-export" role="menuitem" title="Export selected" data-i18n-title="ext.batch.exportTitle">
+                  <svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 1.5v7"/><path d="M4 5.5l3 3 3-3"/><path d="M1.5 10.5v1a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>
+                  <span data-i18n="ext.batch.export">Export</span>
+                </button>
+                <button type="button" class="nethub-menu-item nethub-menu-danger" id="ext-menu-delete" role="menuitem" title="Delete selected" data-i18n-title="ext.batch.deleteTitle" aria-label="Delete selected extensions" data-i18n-aria="ext.batch.deleteAria">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 01-1-1h-4a1 1 0 01-1 1v3M4 7h16"/></svg>
+                  <span data-i18n="common.delete">Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div id="ext-grid" class="conn-grid"></div>
+          <!-- The column's two fixed bottom actions, the pair the connections
+               panel closes with: authoring one and importing a set are the two
+               ways an extension enters the list. -->
+          <div class="drawer-add-row">
+            <div class="drawer-add drawer-add-grow" id="ext-add" role="button" tabindex="0" title="New extension" data-i18n-title="ext.add.title" aria-label="New extension" data-i18n-aria="ext.add.title">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              <span class="drawer-add-label" data-i18n="ext.add.label">New</span>
+            </div>
+            <button type="button" class="drawer-add drawer-import" id="ext-import-open" title="Import extensions" data-i18n-title="ext.batch.import" aria-label="Import extensions" data-i18n-aria="ext.batch.import">
+              <svg viewBox="0 0 14 14" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8.5v-7"/><path d="M4 4.5l3-3 3 3"/><path d="M1.5 10.5v1a1 1 0 001 1h9a1 1 0 001-1v-1"/></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
     </div>
 
 
@@ -423,11 +510,62 @@
     </div>
   </div>
 
+  <!-- The extension configuration: the modal behind a card's gear, and behind New.
+       It edits the TOML file the store holds — the same text an export hands out
+       and a colleague's file would contain. There is no field form on purpose: the
+       fields would be a second description of the template to keep in step with
+       this one, and the people who read this panel are not the ones who live in it.
+       Removal lives here rather than on the card: it is a template-level action,
+       and the batch row carries the bulk form of it. -->
+  <div id="modal-ext" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-h">
+        <h2 id="modal-ext-title" data-i18n="ext.modal.title">New extension</h2>
+        <button type="button" id="modal-ext-close" class="modal-x" title="Close" data-i18n-title="common.close"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 2l8 8M10 2L2 10"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <p id="modal-ext-err" class="err" style="display:none"></p>
+        <label for="ext-f-name" data-i18n="ext.modal.name">Name</label>
+        <input id="ext-f-name" type="text" autocomplete="off" spellcheck="false" placeholder="my-tool">
+        <label for="ext-f-toml" data-i18n="ext.modal.toml">config.toml</label>
+        <textarea id="ext-f-toml" spellcheck="false" rows="16"></textarea>
+        <p class="conn-check-hint" data-i18n="ext.modal.tomlHint">The name of an extension is its directory, so the file carries no name key.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-danger" id="modal-ext-delete" style="display:none" data-i18n="common.delete">Delete</button>
+          <button type="button" class="btn" id="modal-ext-cancel" data-i18n="common.cancel">Cancel</button>
+          <button type="button" class="btn btn-primary" id="modal-ext-save" data-i18n="common.save">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Importing extensions: the same document an export produces, as a file. A
+       name that is already taken comes back renamed rather than overwriting what
+       is stored, so the readout is where a partially-renamed import is told. -->
+  <div id="modal-ext-import" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-h">
+        <h2 data-i18n="ext.batch.import">Import extensions</h2>
+        <button type="button" class="btn" id="ext-import-close" data-i18n="common.close">Close</button>
+      </div>
+      <div class="modal-body">
+        <p id="ext-import-err" class="err" style="display:none"></p>
+        <div class="conn-field"><label for="ext-import-file" data-i18n="conn.batch.file">TOML file</label><input type="file" id="ext-import-file" accept=".toml,application/toml,text/plain"></div>
+        <p class="conn-check-hint" data-i18n="ext.batch.importHint">Names already in use are renamed automatically. An invalid file imports nothing.</p>
+        <p id="ext-import-result" role="status" class="form-ok" style="display:none"></p>
+        <div class="modal-actions"><button type="button" class="btn btn-primary" id="ext-import-run" data-i18n="ext.batch.import">Import extensions</button></div>
+      </div>
+    </div>
+  </div>
+
   <script src="static/xterm/xterm.js"></script>
   <script src="static/js/i18n-catalog.js"></script>
   <script src="static/js/i18n.js"></script>
   <script src="static/js/storage-notice.js"></script>
   <script src="static/js/theme.js"></script>
+  <!-- The batch bar both columns wear (see batch-bar.js): it must be defined
+       before the panels that build one, so it loads ahead of dialogs.js. -->
+  <script src="static/js/batch-bar.js"></script>
   <script src="static/js/util.js"></script>
   <script src="static/js/shell-windows.js"></script>
   <script src="static/js/forward-modal.js"></script>
@@ -442,5 +580,8 @@
   <script src="static/js/terminal-switcher.js"></script>
   <script src="static/js/dialogs.js"></script>
   <script src="static/js/conn-form.js"></script>
+  <script src="static/js/extensions.js"></script>
+  <script src="static/js/update-notice.js"></script>
+  <script src="static/js/clients.js"></script>
 </body>
 </html>

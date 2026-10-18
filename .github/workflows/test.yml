@@ -33,6 +33,12 @@ jobs:
       - name: Test Python helpers
         run: python -m unittest discover -s scripts -p "test_*.py"
 
+      # Self-check for the same script: pins the pre-release rule (an -rc.N tag
+      # must not move server.json) that the version test in internal/mcp covers
+      # from the other side.
+      - name: Check release metadata script
+        run: python -m unittest discover -s scripts -p '*_test.py'
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"

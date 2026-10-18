@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,10 +19,25 @@ import (
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
 
-func (h *Handler) resolveFileSession(sessionID string, w http.ResponseWriter) (*session.Session, *ssh.Client, bool) {
+// resolveFileSession resolves the session a file route names and applies the
+// session's capability whitelist before the handler touches the filesystem.
+//
+// The tool name is passed in rather than derived from the method and path: the
+// whitelist's vocabulary is the MCP tool surface's (file_read, file_write, …),
+// which is what an extension template's author writes, and deriving it here
+// would invent a second vocabulary the template does not speak.
+func (h *Handler) resolveFileSession(sessionID, tool string, paths [][2]string, w http.ResponseWriter) (*session.Session, *ssh.Client, bool) {
 	sess := h.Sessions.Get(sessionID)
 	if sess == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
+		return nil, nil, false
+	}
+	// The whitelist is checked before the liveness check: a refused call should
+	// read as refused, not as a transient state of the session.
+	if restRefuseTool(w, sess, tool) {
+		return nil, nil, false
+	}
+	if restRefusePaths(w, sess, paths...) {
 		return nil, nil, false
 	}
 	// File operations need a live connection; a closed (DEAD) session keeps its
@@ -46,7 +62,7 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Debug("handleListFiles", "session", sid, "path", path)
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	_, sshClient, ok := h.resolveFileSession(sid, "file_stat", [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -108,15 +124,63 @@ func (h *Handler) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	offset, length, isRange := downloadRange(r)
 
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	hdr, err := requestResponseHeaders(r.URL.Query())
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+
+	_, sshClient, ok := h.resolveFileSession(sid, "file_read", [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
 	if sshClient == nil {
-		serveLocalFile(w, r, path, offset, length, isRange)
+		serveLocalFile(w, r, path, offset, length, isRange, hdr)
 		return
 	}
-	serveRemoteFile(w, r, path, sshClient, offset, length, isRange)
+	serveRemoteFile(w, r, path, sshClient, offset, length, isRange, hdr)
+}
+
+// requestResponseHeaders decodes the ?h.<Name>=<value> parameters a download URL
+// may carry (see api.AppendResponseHeaders) into headers ready to be written.
+func requestResponseHeaders(q url.Values) (http.Header, error) {
+	byName, err := api.ResponseHeadersFromQuery(q)
+	if err != nil {
+		return nil, err
+	}
+	hdr := http.Header{}
+	for name, values := range byName {
+		// Canonical form, so the framing-header check cannot be walked around by
+		// spelling "content-length" in lowercase.
+		hdr[http.CanonicalHeaderKey(name)] = values
+	}
+	return hdr, nil
+}
+
+// serverOwnedHeaders are the headers that frame the body: where it starts, where
+// it ends, and how it is encoded on the wire. They belong to the stream being
+// sent, not to the caller — a caller-set Content-Length describes a body of a
+// different length than the one arriving, which truncates the download or hangs
+// the client waiting for bytes that never come. A requested one is dropped.
+var serverOwnedHeaders = map[string]bool{
+	"Content-Length":    true,
+	"Content-Range":     true,
+	"Transfer-Encoding": true,
+	"Connection":        true,
+	"Trailer":           true,
+}
+
+// applyResponseHeaders writes the caller's requested headers onto the response.
+// It runs immediately before the body starts, so a requested Content-Disposition
+// (the usual reason to ask for one) overrides the one the streamer would have
+// sent, while the framing headers above stay the server's.
+func applyResponseHeaders(w http.ResponseWriter, hdr http.Header) {
+	for name, values := range hdr {
+		if serverOwnedHeaders[name] {
+			continue
+		}
+		w.Header()[name] = values
+	}
 }
 
 // downloadRange reads the byte window a download asks for. The Range header wins
@@ -139,14 +203,13 @@ func downloadRange(r *http.Request) (offset, length int64, isRange bool) {
 // SFTP involved, so http.ServeFile is used whenever possible: it implements Range
 // and If-Modified-Since natively. The manual path exists only for an explicit
 // ?offset=&length= window, which ServeFile has no way to express.
-func serveLocalFile(w http.ResponseWriter, r *http.Request, path string, offset, length int64, isRange bool) {
+func serveLocalFile(w http.ResponseWriter, r *http.Request, path string, offset, length int64, isRange bool, hdr http.Header) {
 	// Internal / local: http.ServeFile handles Range + If-Modified-Since natively.
 	// Only use manual path when explicit ?offset=&length= query params are set.
-	if !isRange && r.URL.Query().Get("offset") == "" {
-		http.ServeFile(w, r, path)
-		return
-	}
-	if isRange {
+	// ServeContent sets the headers it owns (framing, and Content-Type only when
+	// unset), so the caller's go on first and survive where they may.
+	if isRange || r.URL.Query().Get("offset") == "" {
+		applyResponseHeaders(w, hdr)
 		http.ServeFile(w, r, path)
 		return
 	}
@@ -172,6 +235,7 @@ func serveLocalFile(w http.ResponseWriter, r *http.Request, path string, offset,
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(path)))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", length))
 	w.Header().Set("Accept-Ranges", "bytes")
+	applyResponseHeaders(w, hdr)
 	w.WriteHeader(http.StatusOK)
 	io.CopyN(w, f, length)
 }
@@ -180,7 +244,7 @@ func serveLocalFile(w http.ResponseWriter, r *http.Request, path string, offset,
 // resolves the Range header against the remote size, then hands the window to
 // StreamReadTo, which reads exactly the requested bytes instead of pulling the
 // whole file to the termcp host first.
-func serveRemoteFile(w http.ResponseWriter, r *http.Request, path string, sshClient *ssh.Client, offset, length int64, isRange bool) {
+func serveRemoteFile(w http.ResponseWriter, r *http.Request, path string, sshClient *ssh.Client, offset, length int64, isRange bool, hdr http.Header) {
 	// Remote — SFTP streaming.
 	sftpCli, err := sftp.NewClient(sshClient)
 	if err != nil {
@@ -217,12 +281,13 @@ func serveRemoteFile(w http.ResponseWriter, r *http.Request, path string, sshCli
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filepath.Base(path)))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", length))
 	w.Header().Set("Accept-Ranges", "bytes")
+	status := http.StatusOK
 	if isRange {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, offset+length-1, stat.Size))
-		w.WriteHeader(http.StatusPartialContent)
-	} else {
-		w.WriteHeader(http.StatusOK)
+		status = http.StatusPartialContent
 	}
+	applyResponseHeaders(w, hdr)
+	w.WriteHeader(status)
 
 	if _, err := sftpCli.StreamReadTo(w, path, offset, length); err != nil {
 		slog.Error("download stream failed", "path", path, "err", err)
@@ -260,7 +325,7 @@ func (h *Handler) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	_, sshClient, ok := h.resolveFileSession(sid, "file_write", [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -311,7 +376,7 @@ func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "path required"})
 		return
 	}
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	_, sshClient, ok := h.resolveFileSession(sid, "file_delete", [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -351,7 +416,7 @@ func (h *Handler) handleRenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	_, sshClient, ok := h.resolveFileSession(sid, "file_rename", [][2]string{{"from", from}, {"to", to}}, w)
 	if !ok {
 		return
 	}
@@ -385,7 +450,7 @@ func (h *Handler) handleMakeDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, w)
+	_, sshClient, ok := h.resolveFileSession(sid, "file_mkdir", [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}

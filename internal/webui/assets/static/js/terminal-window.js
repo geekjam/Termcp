@@ -54,13 +54,11 @@ function openPendingShellWindow(connName, pos, abortCtl) {
         '<button type="button" class="shell-tab-btn" data-stab="file" title="Files" data-i18n-title="win.files.tab"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3v9a1 1 0 001 1h10a1 1 0 001-1V4.5a1 1 0 00-1-1h-5L5.5 2H2a1 1 0 00-1 1z"/></svg></button>' +
         '</div>' +
       '<div class="shell-window-header-btns">' +
-        '<button type="button" class="shell-window-max-btn" title="Maximize (dblclick header)" data-i18n-title="win.max.tip"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2 5V2h3M10 7v3H7M2 2l3.5 3.5M10 10L6.5 6.5"/></svg></button><button type="button" class="shell-window-collapse-btn" title="Collapse" data-i18n-title="win.collapse">' +
+        SHELL_WINDOW_MAX_HTML + '<button type="button" class="shell-window-collapse-btn" title="Collapse" data-i18n-title="win.collapse">' +
           '<svg class="ic-d" viewBox="0 0 12 8" width="12" height="8"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M1 2l5 4 5-4"/></svg>' +
           '<svg class="ic-u" viewBox="0 0 12 8" width="12" height="8" style="display:none"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M1 6l5-4 5 4"/></svg>' +
         '</button>' +
-        '<button type="button" class="shell-window-min-btn" title="Minimize (session keeps running)" data-i18n-title="win.minimize">' +
-          '<svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 6h8"/></svg>' +
-        '</button>' +
+        SHELL_WINDOW_MIN_HTML +
         '<button type="button" class="close-btn" title="Close (cancel connect)" data-i18n-title="win.closeCancel">' +
           '<svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 2l8 8M10 2L2 10"/></svg>' +
         '</button>' +
@@ -190,6 +188,19 @@ var SHELL_RESIZE_HANDLES_HTML =
   '<div class="shell-window-resize-handle" data-corner="sw" title="Drag to resize" data-i18n-title="win.resize"></div>' +
   '<div class="shell-window-resize-handle" data-corner="se" title="Drag to resize" data-i18n-title="win.resize"></div>';
 
+/* The header's two window keys, shared by every kind of window this app opens —
+   a terminal session, a connecting placeholder, and an extension's status card.
+   The card has no session behind it, so it wears SHELL_WINDOW_MIN_HTML_CARD
+   instead: "session keeps running" is a promise only a session can make. Both
+   are bound by the same helpers (bindShellWindowMaxButton, bindShellWindowMinButton),
+   which is why the class names are the whole contract here. */
+var SHELL_WINDOW_MAX_HTML =
+  '<button type="button" class="shell-window-max-btn" title="Maximize (dblclick header)" data-i18n-title="win.max.tip"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2 5V2h3M10 7v3H7M2 2l3.5 3.5M10 10L6.5 6.5"/></svg></button>';
+var SHELL_WINDOW_MIN_HTML =
+  '<button type="button" class="shell-window-min-btn" title="Minimize (session keeps running)" data-i18n-title="win.minimize"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 6h8"/></svg></button>';
+var SHELL_WINDOW_MIN_HTML_CARD =
+  '<button type="button" class="shell-window-min-btn" title="Minimize" data-i18n-title="win.minimize.ext"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 6h8"/></svg></button>';
+
 /**
  * The review panel: a floating card over the terminal's top-right corner.
  *
@@ -275,13 +286,11 @@ function openShellWindow(connLabel, sessionId, pos, opts) {
         '<button type="button" class="shell-tab-btn" data-stab="file" title="Files" data-i18n-title="win.files.tab"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3v9a1 1 0 001 1h10a1 1 0 001-1V4.5a1 1 0 00-1-1h-5L5.5 2H2a1 1 0 00-1 1z"/></svg></button>' +
         '</div>' +
       '<div class="shell-window-header-btns">' +
-        '<button type="button" class="shell-window-max-btn" title="Maximize (dblclick header)" data-i18n-title="win.max.tip"><svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2 5V2h3M10 7v3H7M2 2l3.5 3.5M10 10L6.5 6.5"/></svg></button><button type="button" class="shell-window-collapse-btn" title="Collapse" data-i18n-title="win.collapse">' +
+        SHELL_WINDOW_MAX_HTML + '<button type="button" class="shell-window-collapse-btn" title="Collapse" data-i18n-title="win.collapse">' +
           '<svg class="ic-d" viewBox="0 0 12 8" width="12" height="8"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M1 2l5 4 5-4"/></svg>' +
           '<svg class="ic-u" viewBox="0 0 12 8" width="12" height="8" style="display:none"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M1 6l5-4 5 4"/></svg>' +
         '</button>' +
-        '<button type="button" class="shell-window-min-btn" title="Minimize (session keeps running)" data-i18n-title="win.minimize">' +
-          '<svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 6h8"/></svg>' +
-        '</button>' +
+        SHELL_WINDOW_MIN_HTML +
         '<button type="button" class="close-btn" title="Delete session" data-i18n-title="session.delete.title">' +
           '<svg viewBox="0 0 12 12" width="12" height="12"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M2 2l8 8M10 2L2 10"/></svg>' +
         '</button>' +
@@ -358,8 +367,12 @@ SHELL_WINDOW_PANELS_HTML +
           win._primaryShellId = (tabs[0].shell_id || tabs[0].id);
         }
         tabs.forEach(function(s) { createChannelTab(win, s.shell_id || s.id, { index: s.index || 0 }); });
-        // Restore last active tab.
-        var lastActive = window._shellLastActive && window._shellLastActive[sessionId];
+        /* The caller's channel wins over the remembered one: a window opened from
+           the extension panel is a request for one extension's terminal, and the
+           session behind it may be serving several. Falling back to the last
+           active tab keeps every other caller's behaviour. */
+        var want = opts.shell && win._channels[opts.shell] ? opts.shell : '';
+        var lastActive = want || (window._shellLastActive && window._shellLastActive[sessionId]);
         if (lastActive && win._channels[lastActive]) switchChannelTab(win, lastActive);
         if (readOnly) lockWindowReadonly(win);
       } else {

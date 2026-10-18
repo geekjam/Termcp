@@ -75,6 +75,16 @@ var gatedTools = []gatedTool{
 	{"forward", approval.KindForwardOpen},
 }
 
+// forwardKind separates opening a tunnel from closing one: they are different
+// decisions, and the worklist should say which is which. A session can be scoped
+// to one without the other.
+func forwardKind(args map[string]any) approval.Kind {
+	if getString(args, "action", "") == "close" {
+		return approval.KindForwardClose
+	}
+	return approval.KindForwardOpen
+}
+
 // kindForTool maps a tool name to the kind recorded on the request.
 func kindForTool(tool string) approval.Kind {
 	for _, g := range gatedTools {
@@ -108,7 +118,17 @@ func (s *Server) gateOperation(ctx context.Context, request mcpgo.CallToolReques
 	// The lookup is by the resolved session, so a locator gates exactly like the id
 	// it names. A failure here is not reported: the handler owns the error message.
 	sess, bad := s.requireSession(sessionID)
-	if bad != nil || sess == nil || !sess.ApprovalEnabled() {
+	if bad != nil || sess == nil {
+		return nil, false
+	}
+	/* Which operations this session holds. Asked before the arguments are
+	   marshalled because the kind depends on them for `forward` (open vs close),
+	   and a session scoped to one of the two must let the other through. */
+	kind := kindForTool(tool)
+	if tool == "forward" {
+		kind = forwardKind(request.GetArguments())
+	}
+	if !sess.GatesKind(kind) {
 		return nil, false
 	}
 
@@ -117,17 +137,6 @@ func (s *Server) gateOperation(ctx context.Context, request mcpgo.CallToolReques
 	payload, err := json.Marshal(gatedPayload{Tool: tool, Args: args})
 	if err != nil {
 		return toolError(CodeOperationFailed, "cannot describe the operation for review: %s", err.Error()), true
-	}
-	kind := kindForTool(tool)
-	// A forward's kind depends on the action: opening a tunnel and closing one
-	// are different decisions, and the worklist should say which is which.
-	if tool == "forward" {
-		switch getString(args, "action", "") {
-		case "close":
-			kind = approval.KindForwardClose
-		default:
-			kind = approval.KindForwardOpen
-		}
 	}
 	if _, err := sess.SubmitOperation(approval.Submission{
 		Kind:    kind,

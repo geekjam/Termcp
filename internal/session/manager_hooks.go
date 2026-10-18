@@ -103,21 +103,29 @@ func (m *Manager) notifyApproval(sessionID string, req approval.Request) {
 	}
 }
 
-// SetOnDeadHook registers a callback invoked once per session, right after it
-// transitions to DEAD (explicit terminate, process exit, or transport loss).
-// Resources bound to a live transport — port forwards — are torn down there;
-// deleting the session later only finalizes what remains.
-func (m *Manager) SetOnDeadHook(fn func(sessionID string)) {
+// AddOnDeadHook subscribes to the once-per-session DEAD transition: the callback
+// runs right after a session becomes DEAD (explicit terminate, process exit, or
+// transport loss). Resources bound to a live transport — port forwards — are torn
+// down there; deleting the session later only finalizes what remains.
+//
+// The event is fanned out rather than owned, because termcp has more than one
+// consumer of it: the forward manager releasing a dead session's tunnels and the
+// extension reconciler marking its extension unavailable subscribe to the same
+// transition, and neither may displace the other.
+func (m *Manager) AddOnDeadHook(fn func(sessionID string)) {
+	if fn == nil {
+		return
+	}
 	m.listChangeMu.Lock()
-	m.onDeadHook = fn
+	m.onDeadHooks = append(m.onDeadHooks, fn)
 	m.listChangeMu.Unlock()
 }
 
 func (m *Manager) notifyDead(sessionID string) {
 	m.listChangeMu.RLock()
-	fn := m.onDeadHook
+	hooks := append([]func(string){}, m.onDeadHooks...)
 	m.listChangeMu.RUnlock()
-	if fn != nil {
+	for _, fn := range hooks {
 		fn(sessionID)
 	}
 }

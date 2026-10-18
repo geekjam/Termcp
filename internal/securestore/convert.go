@@ -2,6 +2,7 @@ package securestore
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
+	"github.com/open-mcp-ai/termcp/internal/extensions"
 	"github.com/open-mcp-ai/termcp/internal/sessionlog"
 	"github.com/open-mcp-ai/termcp/internal/sshconfig"
 	"github.com/open-mcp-ai/termcp/internal/storage"
@@ -61,7 +63,29 @@ func convert(ctx context.Context, root, stage string, keys *encryptedfs.KeyManag
 	if err := os.Remove(hostPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if _, err := os.Stat(filepath.Join(root, "store.enc")); err == nil {
+		data, err := os.ReadFile(filepath.Join(root, "config", "hosts.enc"))
+		if err != nil {
+			return err
+		}
+		if err := encryptedfs.MkdirAllDurable(filepath.Dir(hostPath)); err != nil {
+			return err
+		}
+		if err := os.WriteFile(hostPath, data, 0600); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	hosts, err := sshconfig.NewEncryptedStore(stage, keys)
+	if err != nil {
+		return err
+	}
+	templates, err := extensions.NewEncryptedStore(stage, keys)
+	if err != nil {
+		return err
+	}
+	existingTemplates, err := extensions.NewEncryptedStore(root, keys)
 	if err != nil {
 		return err
 	}
@@ -76,6 +100,36 @@ func convert(ctx context.Context, root, stage string, keys *encryptedfs.KeyManag
 			return err
 		}
 		parts := strings.Split(entry.Path, "/")
+		if len(parts) == 3 && parts[0] == "extensions" && parts[2] == "config.toml" && !strings.HasPrefix(parts[1], ".") {
+			data, err := readSmall(filepath.Join(root, filepath.FromSlash(entry.Path)))
+			if err != nil {
+				return err
+			}
+			existing, readErr := existingTemplates.ReadRaw(parts[1])
+			if readErr == nil && !bytes.Equal(existing, data) {
+				clear(existing)
+				clear(data)
+				return ErrLegacyChanged
+			}
+			clear(existing)
+			if readErr != nil && !errors.Is(readErr, extensions.ErrNotFound) {
+				clear(data)
+				return readErr
+			}
+			err = templates.ImportRaw(parts[1], data)
+			if err == nil {
+				var got []byte
+				got, err = templates.ReadRaw(parts[1])
+				if err == nil && !bytes.Equal(data, got) {
+					err = encryptedfs.ErrFormat
+				}
+				clear(got)
+			}
+			clear(data)
+			if err != nil {
+				return err
+			}
+		}
 		if len(parts) == 3 && parts[0] == "ssh_configs" && parts[2] == "config.toml" {
 			name := parts[1]
 			if name == "internal" || strings.HasPrefix(name, ".") && name != ".internal" {

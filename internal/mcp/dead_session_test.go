@@ -221,7 +221,7 @@ func TestForwardsCascadeOnSessionDead(t *testing.T) {
 func TestCleanExitPipeShellKeepsContainerRunning(t *testing.T) {
 	s := newTestServer(t)
 	s.forwardMgr = forward.NewForwardManager()
-	s.sessMgr.SetOnDeadHook(s.forwardMgr.CloseBySession)
+	s.sessMgr.AddOnDeadHook(s.forwardMgr.CloseBySession)
 
 	startRes, err := s.handleStartSession(context.Background(), makeRequest(map[string]any{
 		"command":    "echo",

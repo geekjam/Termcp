@@ -36,7 +36,7 @@ var compactToolDescriptions = map[string]string{
 	"shell_input":             "Write text to shell stdin without executing; use shell_key(enter) to run it. Returns offset/total_lines/line — where this input lands in the transcript; pair responses via message spans.",
 	"shell_key":               "Send a named key to a shell.",
 	"shell_output":            "Read output of a live or closed shell; empty read != done (poll, timeout<=3). Cursor (offset/tail_lines/from_line/reader_id): advance by end_offset, never bytes_returned; partial_tail_bytes>0 = mid-line tail. stream=o|e filters by producer.",
-	"session_list":            "List sessions.",
+	"session_list":            "List sessions (a subsystem’s own connections are excluded).",
 	"session_info":            "Session details + its shells.",
 	"session_terminate":       "Close a session (DEAD): stops shells and forwards; entry stays in the registry and readable.",
 	"session_delete":          "Delete a session and its on-disk byte logs.",
@@ -58,6 +58,7 @@ var compactToolDescriptions = map[string]string{
 	"file_getwd":              "Get the SFTP working directory for a session.",
 	"message":                 "Transcript span index: status, time, byte offsets, from_line/to_line line numbers. status: o output, a AI input, i human input, q approval asked, A approved input; i/q = human operated. Bytes via shell_output(offset, max_bytes); lines via shell_output(from_line).",
 	"ssh_config":              "SSH profiles: action=list names, or (if enabled) create/edit/copy/delete." + sshConfigImportFormat,
+	"extension":               "Extensions — pinned sessions with trimmed capabilities; enabled extensions on a host share one connection, each driving its own shell_id. action=list → status + the session_id/shell_id to drive them through; get → one template with its notes (read them before first use); create/update author one (kind+target suffices; an omitted field keeps its stored value, an empty array clears it); delete; retry reconnects an unavailable one now. kind: mcp = an MCP server (a stdio command, or a url relayed in-process), skill = read-only file window (no shell), prompt = terminal with instructions. An available extension is an ordinary session: drive it with shell_input/shell_output or file_read against its handles; a call the template did not whitelist is really refused. Extension sessions are not listed by session_list; never terminate or delete one. Full guide: resource extensions.md.",
 	"shell_notify":            "Manage wake-up rules (register/unregister/list). TO WAIT ON A HUMAN AT A PROMPT (sudo/password, interactive prompts): notify_user first, register event=output HERE, stop polling shell_output — their next keystroke wakes you; unregister when they have answered.",
 	"notify_user":             "Notify the human user via the termcp Web UI: toast + system notification on every open page; session_id highlights that session's card. CALL IT BEFORE ASKING THE HUMAN FOR ANYTHING (password/sudo/MFA/passphrase, confirmation, approval, a choice, or interactive input) and when a long task ends or fails. Blocking asks: level=warn or error, duration_seconds=0 (sticky), the affected session_id. Once you have asked, WAIT: never poll, guess or fake an answer. delivered=0 means no Web UI page was open.",
 }
@@ -113,6 +114,7 @@ var deferredTools = map[string]bool{
 	// Introspection and configuration.
 	"message":    true,
 	"ssh_config": true,
+	"extension":  true,
 }
 
 // These fields are either identifiers, paths, coordinates, or self-evident

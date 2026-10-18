@@ -7,6 +7,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/open-mcp-ai/termcp/internal/ns"
 	"github.com/open-mcp-ai/termcp/internal/session"
 	"github.com/open-mcp-ai/termcp/internal/sftp"
 	"github.com/open-mcp-ai/termcp/internal/sshconfig"
@@ -42,6 +43,32 @@ func filterRunning(in []api.Session) []api.Session {
 		if s.Status == api.SessionRunning {
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// listableSessions is what a session list shows: the running sessions that belong
+// to the caller. A session in an infrastructure namespace was created by a
+// subsystem — the extension layer keeps one per host — and is reached through that
+// subsystem's own handle (extension(action=list) hands out its session_id and
+// shell_id) rather than discovered in a list. Its id still resolves everywhere an
+// id is accepted, so a handle already in hand keeps working.
+//
+// callerNS is the caller's own namespace, empty for the operator. A caller that
+// claimed one sees exactly its own sessions — an extension session belongs to the
+// extension layer, so a tenant's list does not grow one just because the tenant
+// is the one asking. Listing and by-id reach both go through ns.OwnedBy, so the
+// two cannot disagree about what a caller may touch.
+func listableSessions(in []api.Session, callerNS string) []api.Session {
+	out := make([]api.Session, 0, len(in))
+	for _, s := range in {
+		if s.Status != api.SessionRunning {
+			continue
+		}
+		if !ns.Listable(s.Namespace, callerNS) {
+			continue
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -272,4 +299,58 @@ func (s *Server) resolveSSHFromArgs(args map[string]any) (string, *sshconfig.Ent
 		return "", nil, nil, err
 	}
 	return name, ent, r, nil
+}
+
+// batchShellResult runs op over every shell id in a batch, one outcome per entry.
+//
+// It is the shell-side twin of batchSessionResult, and it exists for the same
+// reason: a batch must not be all-or-nothing, because "type into all ten shells"
+// is precisely a case where one dead shell should not stop the other nine.
+//
+// Each entry carries whatever op returned plus shell_id and ok, so a caller can
+// tell which shells took the bytes and which refused. `results` is always
+// present, even for one entry, because a batch that silently degraded to a single
+// result would be indistinguishable from a single call.
+func (s *Server) batchShellResult(ids []string, op func(id string) (map[string]any, *mcpgo.CallToolResult)) *mcpgo.CallToolResult {
+	results := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		entry := map[string]any{"shell_id": id}
+		out, bad := op(id)
+		if bad != nil {
+			entry["ok"] = false
+			// unwrapToolError yields the human-readable message from the tool's
+			// error envelope; a reply that is not one passes through unchanged.
+			if txt := errorReplyText(bad); txt != "" {
+				entry["error"] = txt
+			}
+		} else {
+			entry["ok"] = true
+			for k, v := range out {
+				entry[k] = v
+			}
+		}
+		results = append(results, entry)
+	}
+	return jsonResult(map[string]any{"results": results})
+}
+
+// errorReplyText is the message inside an error reply, or "" when there is none.
+//
+// Deliberately not toolResultText: that one substitutes a fallback sentence for an
+// empty reply, which is right when reporting a failed operation and wrong here — a
+// batch entry with no message would claim an error it cannot describe.
+func errorReplyText(res *mcpgo.CallToolResult) string {
+	if res == nil {
+		return ""
+	}
+	var parts []string
+	for _, c := range res.Content {
+		if t, ok := c.(mcpgo.TextContent); ok && t.Text != "" {
+			parts = append(parts, t.Text)
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return unwrapToolError(strings.Join(parts, "; "))
 }

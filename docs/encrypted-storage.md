@@ -54,11 +54,13 @@ provider 不可用、密码错误或主密钥文件丢失时，不能生成新�
 4. 提交 `store.enc` 前验证配置、原始输出、标记和来源索引；提交成功后才清理原文件。中断后用相同密钥重启，复核已完成密文后继续。
 5. 若显示 `CLEANUP_PENDING`，加密业务存储已可用，但仍有旧明文未清理。检查文件占用、权限和源文件是否被旧进程修改，再重启重试；未完成清理前不要宣称所有本地数据都已加密。
 
+旧 `extensions/<name>/config.toml` 及其原子替换临时文件也纳入迁移。模板中的认证头、命令参数与未知 TOML 字段按原始字节保留；密文认证验证后才清理明文。已有加密主机与历史的目录会追加迁移新发现的旧扩展模板，不清空原有数据，仍支持中断续迁。
+
 会话 ID、shell 编号、按字节/按行读取及 stdout/stderr 分类保持兼容，历史会话按重启规则恢复为 DEAD。
 缺失旧 `log.stdio` 时沿用旧版默认 stdout，不能由此推断原始输出来源；旧输出只有标记级时间，没有逐块精确时间、Resize 或原始 stdin，不补造这些信息。
 损坏元数据、孤立历史、非法或残缺标记、源文件变化会阻止提交并保留源，需修复后重试。
 
-新业务路径为 `keys/master.key`、`config/hosts.enc`、`sessions/<session_id>/meta.enc`、`sessions/<session_id>/<shell_id>/{meta.enc,events.enc,events.idx.enc}`。
+新业务路径为 `keys/master.key`、`config/hosts.enc`、`extensions/<name>/config.enc`、`sessions/<session_id>/meta.enc`、`sessions/<session_id>/<shell_id>/{meta.enc,events.enc,events.idx.enc}`。
 `store.enc` 是认证加密的提交标记；`.store.lock` 是不含秘密的系统锁文件。
 迁移中间文件从首次写入起即为密文；任务清单位于 `.migration/active/state.enc`。会话相关的迁移副本放在所属会话/shell 的 `.legacy-<id>/` 中，删除历史时一并删除。
 旧诊断和其他遗留副本位于 `diagnostics/legacy-<id>/`；正常完成后删除暂存及已转换配置的冗余备份。
@@ -71,6 +73,8 @@ provider 不可用、密码错误或主密钥文件丢失时，不能生成新�
 ## 配置导入与导出的文件密码
 
 工作区的「导出配置」会显示可选文件密码及确认框。两项均留空，下载原有的 `termcp-connections.toml` 明文文件；填写相同密码则下载 `termcp-connections.toml.enc`。明文导出包含主机凭据，界面会持续提示这一点。临时主机仍不参与任何导出。
+
+兼容旧 `X-Termcp-Password` 接口生成的 `TERMCP-ENC 1` 导出文件；Web UI 和 multipart 导入接口也可用对应密码打开，完整认证成功后才导入。
 
 文件密码独立于存储主密码，服务端不保存它。加密文件使用随机 salt、Argon2id 和随机 nonce 的 XChaCha20-Poly1305，可以在另一台 Termcp 实例中导入，不需要原实例的主密钥。不要遗忘文件密码；源实例仍保存其原配置。
 

@@ -181,9 +181,10 @@ func credentials(r *http.Request) []candidate {
 // reference and download the skill; every data/action surface still requires
 // the token.
 var publicPaths = map[string]struct{}{
-	"/api.md":    {},
-	"/SKILL.md":  {},
-	"/skills.md": {}, // legacy skill download URL
+	"/api.md":        {},
+	"/SKILL.md":      {},
+	"/skills.md":     {}, // legacy skill download URL
+	"/extensions.md": {},
 }
 
 // isPublicDoc reports whether the request targets one of the credential-free

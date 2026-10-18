@@ -4,9 +4,15 @@ function hideModal(id) { document.getElementById(id).classList.add('hidden'); }
 /**
  * Only guard page leave when terminal windows are actually open.
  * Sessions keep running on the server even when windows are closed.
+ *
+ * "Actually open" means a window with a session or a dial behind it: the guard's
+ * claim is about sessions surviving on the server, and an extension's status card
+ * (no _parentSid, no _placeholder) has neither a terminal nor anything that keeps
+ * running — counting it would warn about a session the reader never started.
  */
 function pageHasLiveState() {
-  var openWins = (typeof allShellWins === 'function' ? allShellWins() : []).length;
+  var openWins = (typeof allShellWins === 'function' ? allShellWins() : [])
+    .filter(function (w) { return !!(w._parentSid || w._placeholder); }).length;
   if (openWins > 0) return tCount('msg.leave.windows.one', 'msg.leave.windows.other', { count: openWins });
   return '';
 }
@@ -170,43 +176,22 @@ function runningSessionsForNode(name) {
   for (var i = 0; i < sess.length; i++) {
     var s = sess[i];
     if (!s || s.status !== 'running') continue;
+    /* A subsystem's own connection is not this node's session: an extension dials
+       the profile for its own reasons, and counting it here would put a session on
+       a card whose count the user cannot act on — the session has no card of its
+       own to act from (see isHiddenSession). */
+    if (typeof isHiddenSession === 'function' && isHiddenSession(s)) continue;
     if (sessionBelongsToNode(s, name, wins)) out.push(s);
   }
   return out;
 }
 
-function nodeState(name) {
-  /* Both lists feed this readout — the connection list says the node exists, the
-     session snapshot says whether anything is live or has ever been held on it.
-     The latter gates the word "offline": the connection list resolves first, and
-     painting offline on that alone labelled every fresh host dead before the
-     socket's first frame. */
-  if (!window._lastConnections || !window._lastSessionsSnapshot) return 'loading';
-  var wins = (typeof allShellWins === 'function') ? allShellWins() : [];
-  for (var i = 0; i < wins.length; i++) {
-    if (wins[i] && wins[i]._placeholder && wins[i]._pendingConnName === name) return 'connecting';
-  }
-  // One pass over the snapshot: whether any record is ours, and whether one of
-  // them is live. A running session outranks a retained one whatever the order.
-  var held = false;
-  var sessions = window._lastSessionsSnapshot || [];
-  for (var j = 0; j < sessions.length; j++) {
-    var s = sessions[j];
-    if (!s || !sessionBelongsToNode(s, name, wins)) continue;
-    if (s.status === 'running') return 'online';
-    held = true;
-  }
-  return held ? 'offline' : 'idle';
-}
-
 /** Repaint the node cards from what the page already holds.
  *
- *  "connecting" is the one state that exists only in a window: a placeholder
- *  window for this profile means a dial is open, and it stops being one when the
- *  session arrives or the dial fails. Nothing else changes on those two events
- *  (a successful dial also brings a session frame; a FAILED one brings nothing),
- *  so the transition has to be painted from the window itself or the card keeps
- *  claiming whatever it said before the click.
+ *  A dial in flight lives only in its placeholder window, and a session arriving
+ *  or a window opening is not always a socket frame, so the session count is
+ *  painted from the windows themselves — otherwise a card keeps claiming what it
+ *  said before the click.
  *
  *  Coalesced through a timer: a batch of window closes — select-all then delete —
  *  fires this once per closed window, and rebuilding the whole card list once per
@@ -247,33 +232,15 @@ function nodeAddress(c) {
   return (user ? user + '@' : '') + host + port;
 }
 
-function nodeStatusLabel(state) {
-  if (state === 'online') return t('nethub.state.online');
-  if (state === 'connecting') return t('nethub.state.connecting');
-  if (state === 'offline') return t('nethub.state.offline');
-  if (state === 'loading') return t('nethub.state.loading');
-  return t('nethub.state.idle');
-}
-
-/** What the state means when the word alone could still be read as a claim about
- *  the machine. "Not connected" and "disconnected" are different facts — one is
- *  the absence of evidence, the other a connection Termcp held and lost — and the
- *  hint is where that distinction is spelled out, since the node row itself is
- *  small and uppercased. */
-function nodeStatusHint(state) {
-  if (state === 'idle') return t('nethub.hint.idle');
-  if (state === 'offline') return t('nethub.hint.offline');
-  return '';
-}
-
-/** The rail: the expand key, then one lamp per access node.
+/** The rail: the expand key, then one key per access node.
  *
- *  A collapsed sidebar still has to answer "which machines can I reach", so the
- *  lamps stay and each one carries the same state the full card shows. No cluster
- *  glyph is rendered here: the trigger directly above already carries it and stays
- *  visible while collapsed, so a second one read as two NetHubs stacked. The count
- *  is capped because the rail is a status strip, not a second list: past the cap
- *  the overflow is one more row with the remainder in its tooltip. */
+ *  A collapsed sidebar still has to answer "which machines can I reach", so each
+ *  node keeps a key here, carrying its name and, in the tooltip, how Termcp
+ *  reaches it and how many sessions are running on it. No cluster glyph is
+ *  rendered here: the trigger directly above already carries it and stays visible
+ *  while collapsed, so a second one read as two NetHubs stacked. The count is
+ *  capped because the rail is a strip, not a second list: past the cap the
+ *  overflow is one more row with the remainder in its tooltip. */
 function renderNodeRail(connections) {
   var rail = document.getElementById('nethub-rail');
   if (!rail) return;
@@ -292,23 +259,19 @@ function renderNodeRail(connections) {
 
   var list = (connections || []).slice(0, 12);
   list.forEach(function (c) {
-    var state = nodeState(c.name);
     var info = nodeSessionInfo(c.name);
-    var hint = nodeStatusHint(state);
     var item = document.createElement('button');
     item.type = 'button';
     item.className = 'nethub-rail-item';
     item.setAttribute('data-conn-name', c.name);
-    item.title = c.name + ' · ' + nodeProtocol(c) + ' · ' + nodeStatusLabel(state)
-      + (hint ? ' · ' + hint : '')
+    item.title = c.name + ' · ' + nodeProtocol(c)
       + (info.count ? ' · ' + tCount('nethub.sessions.one', 'nethub.sessions.other', { count: info.count }) : '');
     item.setAttribute('aria-label', item.title);
     item.innerHTML =
-      '<span class="nethub-rail-status is-' + state + '" aria-hidden="true"></span>' +
       '<span aria-hidden="true">' + escapeHtml(c.name.slice(0, 2).toUpperCase()) + '</span>' +
       (info.focused ? '<span class="nethub-rail-active" aria-hidden="true"></span>' : '');
-    /* A lamp names its node and takes you to it: expanding first, so the click
-       lands on the card it is about rather than on a rail that cannot show it. */
+    /* The initials name their node and take you to it: expanding first, so the
+       click lands on the card it is about rather than on a rail that cannot show it. */
     item.addEventListener('click', function (e) {
       e.stopPropagation();
       setNetHubCollapsed(false, true);
@@ -342,143 +305,47 @@ function focusNodeCard(name) {
   setTimeout(function () { card.classList.remove('node-focus'); }, 1600);
 }
 
-/* ---- Node selection mode --------------------------------------------------
- * One switch re-aims the cards: off, a card is a connect button; on, it is a
- * checkbox and the toolbar's batch actions act on the selection. The set holds
- * profile names rather than DOM state, because the grid rebuilds on every
- * session frame — the checkbox is re-derived from here at each render, the way
- * the session plates derive theirs (sessions.js). */
-
-var _nodeSelectMode = false;
-var _nodeSelIds = new Set();
-
-function nodeSelectModeOn() { return _nodeSelectMode; }
-
-/** Profile names that may carry a selection: every node in the list, the
- *  built-in profile included. Excluding it would make a whole card dead under
- *  the pointer with no word why; the actions themselves carry the exceptions —
- *  open works for it, export skips it server-side, delete reports the refusal
- *  per name. */
-function selectableNodeNames() {
-  var list = window._lastConnections || [];
-  var out = [];
-  for (var i = 0; i < list.length; i++) {
-    if (list[i] && list[i].name) out.push(list[i].name);
-  }
-  return out;
-}
-
-function setNodeSelectMode(on) {
-  on = !!on;
-  if (_nodeSelectMode === on) return;
-  _nodeSelectMode = on;
-  if (!on) _nodeSelIds.clear();
-  var body = document.getElementById('sec-entries-body');
-  if (body) body.classList.toggle('nethub-selecting', on);
-  var toggle = document.getElementById('nethub-select-toggle');
-  if (toggle) toggle.setAttribute('aria-pressed', String(on));
-  // The dropdown belongs to the pressed state; either flip folds it.
-  var menu = document.getElementById('nethub-open-menu');
-  if (menu) menu.hidden = true;
-  var caret = document.getElementById('nethub-open-caret');
-  if (caret) caret.setAttribute('aria-expanded', 'false');
-  /* The cards do not rebuild on a toggle: selection mode is one class on the
-     column (the CSS carries the markers, the quiet buttons, the ticked looks),
-     so a flip only retitles them and syncs the toolbar. */
-  refreshNodeCardTitles();
-  syncNodeCardSelection();
-  updateNodeBatchBar();
-}
-
-/** Re-apply the ticked look from the selection set. The Set is the source of
- *  truth, so this both paints the ticked cards and — the reason it exists —
- *  strips the class from every card the set no longer holds. Leaving the mode
- *  clears the set; without this the cards keep `.batch-selected`, which is
- *  invisible only while `.nethub-selecting` is off. Toggle back on and those
- *  cards light up again as if ticked, with the count reading 0. */
-function syncNodeCardSelection() {
-  var grid = document.getElementById('conn-grid');
-  if (!grid) return;
-  grid.querySelectorAll('.conn-tile[data-conn-name]').forEach(function (tile) {
-    var name = tile.getAttribute('data-conn-name');
-    tile.classList.toggle('batch-selected', _nodeSelectMode && _nodeSelIds.has(name));
-  });
-}
-
-/** Retitle the visible cards without rebuilding them: the tooltip is the one
- *  per-card bit that follows the mode ("connect" vs "tick this one"). */
-function refreshNodeCardTitles() {
-  var grid = document.getElementById('conn-grid');
-  if (!grid) return;
-  var byName = {};
-  (window._lastConnections || []).forEach(function (c) { if (c && c.name) byName[c.name] = c; });
-  grid.querySelectorAll('.conn-tile[data-conn-name]').forEach(function (tile) {
-    var inner = tile.querySelector('.entry-card-inner');
-    var c = byName[tile.getAttribute('data-conn-name')];
-    if (!inner || !c) return;
-    if (_nodeSelectMode) {
-      inner.title = t('nethub.batch.selectOne', { name: c.name });
-      return;
-    }
+/* ---- Host card selection ---
+ * One instance of the shared component (batch-bar.js): this column's ids, its
+ * list, its verb (dial the selection) and its two menu actions. What used to be
+ * a set of helpers here and a copy in the extension column now has one home —
+ * the copy had already drifted once. */
+var _nodeBatch = createBatchBar({
+  bodyId: 'sec-entries-body',
+  toggleId: 'nethub-select-toggle',
+  countId: 'nethub-toggle-count',
+  invertId: 'nethub-sel-invert',
+  splitId: 'nethub-open-split',
+  mainId: 'nethub-batch-open',
+  caretId: 'nethub-open-caret',
+  menuId: 'nethub-open-menu',
+  exportId: 'nethub-menu-export',
+  deleteId: 'nethub-menu-delete',
+  actionIds: ['nethub-menu-export', 'nethub-menu-delete'],
+  gridId: 'conn-grid',
+  cardSelector: '.conn-tile[data-conn-name]',
+  nameAttr: 'data-conn-name',
+  selectingClass: 'nethub-selecting',
+  selectKey: 'nethub.batch.select',
+  names: function () {
+    return (window._lastConnections || []).map(function (c) { return c && c.name; });
+  },
+  render: function () { renderConnGrid(window._lastConnections || [], connBannerText()); },
+  /* The card's own tooltip, away from selection mode: what this column is for. */
+  tipFor: function (name) {
+    var byName = {};
+    (window._lastConnections || []).forEach(function (c) { if (c && c.name) byName[c.name] = c; });
+    var c = byName[name];
+    if (!c) return '';
     var tipConnect = t('conn.tip.connect');
-    if (c.kind === 'internal') inner.title = tipConnect + ' · ' + t('conn.tip.internal');
-    else {
-      var addr = nodeAddress(c);
-      inner.title = addr ? (tipConnect + ' — ' + addr) : tipConnect;
-    }
-  });
-}
-
-/** Sync the toolbar to the current selection: the switch's face becomes the
- *  ticked count (the list icon returns when the selection is spent), the play
- *  split answers disabled while nothing is ticked (its dropdown items with it),
- *  and the select-all key reports whether the entire list is ticked. */
-function updateNodeBatchBar() {
-  var names = selectableNodeNames();
-  var count = 0;
-  for (var i = 0; i < names.length; i++) { if (_nodeSelIds.has(names[i])) count++; }
-  var showCount = _nodeSelectMode && count > 0;
-  var toggle = document.getElementById('nethub-select-toggle');
-  if (toggle) {
-    var icon = toggle.querySelector('svg');
-    if (icon) icon.style.display = showCount ? 'none' : 'block';
-    // The label belongs to the toggle, not to the count: they are separate
-    // elements, and a surface that carries one without the other would
-    // otherwise dereference a null here.
-    toggle.setAttribute('aria-label', showCount ? t('batch.count.selected', { count: count }) : t('nethub.batch.select'));
-  }
-  var countEl = document.getElementById('nethub-toggle-count');
-  if (countEl) {
-    countEl.hidden = !showCount;
-    countEl.textContent = String(count);
-  }
-  // Keep the control's legacy DOM id for external styles.
-  var selAll = document.getElementById('nethub-sel-invert');
-  var allSelected = names.length > 0 && count === names.length;
-  if (selAll) {
-    selAll.disabled = names.length === 0;
-    selAll.classList.toggle('all-checked', allSelected);
-    var label = allSelected ? t('section.batch.clearSelection') : t('section.batch.selectAll');
-    selAll.title = label;
-    selAll.setAttribute('aria-label', label);
-  }
-  var body = document.getElementById('sec-entries-body');
-  if (body) body.classList.toggle('has-selection', count > 0);
-  var split = document.getElementById('nethub-open-split');
-  if (split) split.classList.toggle('is-disabled', count === 0);
-  ['nethub-menu-export', 'nethub-menu-delete'].forEach(function (id) {
-    var item = document.getElementById(id);
-    if (item) item.disabled = count === 0;
-  });
-}
-
-function toggleNodeSelection(name, tile) {
-  var on = !_nodeSelIds.has(name);
-  if (on) _nodeSelIds.add(name);
-  else _nodeSelIds.delete(name);
-  if (tile) tile.classList.toggle('batch-selected', on);
-  updateNodeBatchBar();
-}
+    if (c.kind === 'internal') return tipConnect + ' · ' + t('conn.tip.internal');
+    var addr = nodeAddress(c);
+    return addr ? (tipConnect + ' — ' + addr) : tipConnect;
+  },
+  onOpen: function (names) { openSelectedNodes(names); },
+  onExport: function (names) { exportSelectedNodes(names); },
+  onDelete: function (names) { deleteSelectedNodes(names); }
+});
 
 function renderConnGrid(connections, bannerMsg) {
   var grid = document.getElementById('conn-grid');
@@ -492,13 +359,11 @@ function renderConnGrid(connections, bannerMsg) {
     return (a.name || '').localeCompare(b.name || '');
   }).forEach(function (c) {
     var tile = document.createElement('div');
-    var state = nodeState(c.name);
     var info = nodeSessionInfo(c.name);
     var isInternal = c.kind === 'internal';
-    var selected = _nodeSelectMode && _nodeSelIds.has(c.name);
+    var selected = _nodeBatch.has(c.name);
     tile.className = 'conn-tile entry-card node-card' + (info.focused ? ' node-focus' : '') + (selected ? ' batch-selected' : '');
     tile.setAttribute('data-conn-name', c.name);
-    tile.setAttribute('data-node-state', state);
     // The internal profile is editable too: its settings (review default, shell)
     // are stored as an override. There is nothing to rename or delete, but there
     // is a setting to change, so the button belongs here as well.
@@ -515,13 +380,14 @@ function renderConnGrid(connections, bannerMsg) {
       ? '<span class="conn-temporary-mark" data-i18n-title="conn.temporary.hint" title="Temporary host" data-i18n="conn.temporary.mark">TEMP</span>'
       : '';
     var addr = nodeAddress(c);
-    /* The node's readout, in the order the column is meant to be read: what it
-       is (name), how Termcp reaches it (protocol + state), at which address, and
-       whether anything is currently running on it. */
-    var statusText = nodeStatusLabel(state);
+    /* The node's readout, in the order the column is meant to be read: what it is
+       (name), how Termcp reaches it (protocol), at which address, and whether
+       anything is running on it. Deliberately no reachability verdict: that would
+       be derived from the session list, which keeps archives and holds sessions no
+       card shows, so it would call a host dead for a history someone chose to keep
+       — and "is this machine up" is not what this column is asked. */
     tile.innerHTML =
       '<div class="entry-card-inner">' +
-      '<span class="node-lamp is-' + state + '" aria-hidden="true"></span>' +
       '<div class="entry-card-main">' +
       '<div class="conn-nm-row">' +
       '<span class="conn-nm-cluster">' +
@@ -535,8 +401,6 @@ function renderConnGrid(connections, bannerMsg) {
       '</div>' +
       '<div class="node-meta">' +
       '<span class="node-proto">' + escapeHtml(nodeProtocol(c)) + '</span>' +
-      '<span class="node-sep" aria-hidden="true">·</span>' +
-      '<span class="node-status is-' + state + '">' + escapeHtml(statusText) + '</span>' +
       '</div>' +
       (addr ? '<div class="node-addr">' + escapeHtml(addr) + '</div>' : '') +
       '<div class="node-sess">' + escapeHtml(info.count
@@ -551,19 +415,12 @@ function renderConnGrid(connections, bannerMsg) {
     } else {
       inner.title = addr ? (tipConnect + ' — ' + addr) : tipConnect;
     }
-    /* The two states that describe the absence of a connection say so on the
-       card itself, under the status word: the row is uppercased and small, and
-       "offline" read on its own is a claim about a machine this page never
-       dialled. "idle" in particular is not a fault state — see nodeState. */
-    var statusEl = tile.querySelector('.node-status');
-    var stateHint = nodeStatusHint(state);
-    if (statusEl && stateHint) statusEl.title = stateHint;
     // Clicking the card body connects directly (most frequent action) — unless
     // selection mode re-aims the card, where a click IS the tick and the
     // connect path stays out of the way entirely.
     inner.addEventListener('click', function (e) {
-      if (_nodeSelectMode) {
-        toggleNodeSelection(c.name, tile);
+      if (_nodeBatch.isOn()) {
+        _nodeBatch.toggleSelection(c.name, tile);
         return;
       }
       if (e.target.closest('.conn-edit-btn') || e.target.closest('.sess-copy-btn') || e.target.closest('.conn-quick-btn')) return;
@@ -629,13 +486,11 @@ function renderConnGrid(connections, bannerMsg) {
   // Fill the data-i18n* markers baked into the cards above.
   applyI18n(grid);
   /* Names that left the list (deleted here, renamed in another tab) must not
-     linger in the selection: the set only holds what the grid can still show. */
-  if (window._lastConnections) {
-    var present = {};
-    (connections || []).forEach(function (c) { if (c && c.name) present[c.name] = true; });
-    _nodeSelIds.forEach(function (n) { if (!present[n]) _nodeSelIds.delete(n); });
-  }
-  updateNodeBatchBar();
+     linger in the selection: the set only holds what the grid can still show.
+     The prune rides on the list having arrived — an empty one would drop a tick
+     made against a list the page has not seen yet. */
+  _nodeBatch.syncCards(!!window._lastConnections);
+  _nodeBatch.update();
 }
 
 /*
@@ -649,8 +504,11 @@ function renderConnGrid(connections, bannerMsg) {
  * A manual toggle is stored under one key and wins over the default at every
  * width above the drawer breakpoint — the same localStorage mechanism the
  * section collapse and the language switch already use, so no new state layer.
- * The stored value is read at load, before the first paint of the frame, which
- * is why it lives here rather than in a DOMContentLoaded handler.
+ * Only a toggle above the drawer breakpoint writes it: below it the panel is an
+ * overlay, and the overlay's open and close are the page's business rather than
+ * the sidebar's preference. The stored value is read at load, before the first
+ * paint of the frame, which is why it lives here rather than in a
+ * DOMContentLoaded handler.
  */
 var NETHUB_STATE_KEY = 'termcp.nethub';
 var NETHUB_WIDE = 1200;
@@ -675,6 +533,29 @@ function netHubDefaultCollapsed() {
   return (window.innerWidth || 0) < NETHUB_WIDE;
 }
 
+/* The scrim and the page lock belong to the page, not to whichever drawer last
+   wrote them: both drawers share one of each, so they must be open when EITHER
+   drawer is open. Each writer used to set them from its own state alone, and on
+   a narrow load that raced — dialogs.js applied a stored "expanded" preference
+   and opened this drawer, then extensions.js applied its own stored "collapsed"
+   and cleared the scrim this drawer was still using, leaving the drawer over a
+   page it could not lock or dismiss. Reading both bodies makes the shared
+   surfaces a function of the pair, so a drawer closing never takes them away
+   from a drawer that is still open. */
+function paintDrawerScrim() {
+  var anyOpen = !!(document.querySelector('#sec-entries-body.drawer-open') ||
+                   document.querySelector('#extpanel-body.drawer-open'));
+  var scrim = document.querySelector('.drawer-scrim');
+  if (scrim) scrim.classList.toggle('drawer-open', anyOpen);
+  document.body.style.overflow = anyOpen ? 'hidden' : '';
+}
+
+/* A breakpoint crossing is a change of geometry, not of state, and the drawers'
+   slide belongs to the gesture that opens them. The closed pane is nevertheless
+   off-screen whether or not its transition finishes: visibility is what carries
+   it out of the page (see the drawer rules in workspace.css), so nothing here
+   has to win a race with the compositor. */
+
 function setNetHubCollapsed(collapsed, persist) {
   var frame = document.querySelector('.workspace-frame');
   var body = document.getElementById('sec-entries-body');
@@ -682,17 +563,30 @@ function setNetHubCollapsed(collapsed, persist) {
   if (!frame || !body) return;
   collapsed = !!collapsed;
   var drawer = netHubIsDrawer();
+  /* The extension drawer shares this scrim and this page; opening this one puts
+     it away. extensions.js loads after this file, so the guard is a typeof
+     rather than a call — at load time the function is not there yet, and the
+     cross-call only matters once a click can happen. The pair cannot recurse:
+     only an opening state calls across, and closing never does. */
+  if (drawer && !collapsed && typeof extensionsCollapsed === 'function' && !extensionsCollapsed()) {
+    setExtensionsCollapsed(true, false);
+  }
   /* In the drawer scope the body is shown or hidden; above it the frame keeps
      the rail. Both are one boolean, so the sidebar and the overlay cannot
      disagree about being open — and the scrim follows the overlay only. */
   frame.classList.toggle('nethub-collapsed', collapsed && !drawer);
   body.classList.toggle('drawer-open', drawer && !collapsed);
-  var scrim = document.querySelector('.drawer-scrim');
-  if (scrim) scrim.classList.toggle('drawer-open', drawer && !collapsed);
-  /* The overlay blocks the page behind it; a sidebar does not. */
-  document.body.style.overflow = drawer && !collapsed ? 'hidden' : '';
+  /* The scrim and the page lock follow BOTH drawers (paintDrawerScrim), so
+     closing this one leaves them to the extension drawer if it is open. */
+  paintDrawerScrim();
   if (trigger) trigger.setAttribute('aria-expanded', String(!collapsed));
-  if (persist) {
+  /* The drawer scope never writes the preference: below the breakpoint the
+     panel is an overlay, and dismissing an overlay is not a statement about how
+     the desktop sidebar should sit. Writing it here would rail a column the
+     wide screen later arrives at — the sidebar found collapsed for a decision
+     made about a different shape of the same page. The overlay's state lives in
+     the page, and the sidebar keeps its own. */
+  if (persist && !drawer) {
     try { localStorage.setItem(NETHUB_STATE_KEY, collapsed ? 'collapsed' : 'expanded'); } catch (e) {}
   }
 }
@@ -714,20 +608,46 @@ function currentNetHubCollapsed() {
   return stored === null ? netHubDefaultCollapsed() : stored;
 }
 
-/* A viewport change can move the page across a breakpoint in either direction:
-   resizing a desktop window narrow must not leave a fixed panel "open" over the
-   page, and growing back must restore the sidebar the user chose. The stored
-   preference is re-applied, never rewritten — a resize is not a decision. */
+/* A drawer is an overlay, and an overlay does not open itself: "expanded" was
+   stored on a wide screen where it means the sidebar is out, and carried below
+   the breakpoint it means a drawer over a page that cannot scroll behind it.
+   The stored value still decides the desktop sidebar — this is the state the
+   sidebar arrives in, not a rewrite of the preference. */
+function initialNetHubCollapsed() {
+  return netHubIsDrawer() ? true : currentNetHubCollapsed();
+}
+
+/* A viewport change can move the page across a breakpoint in either direction.
+   Only a crossing is acted on: a resize that stays on one side of the
+   breakpoint changes the sidebar's geometry but not its state, and re-applying
+   would close a drawer the user is in the middle of using. Crossing into drawer
+   mode closes the panel rather than carrying an expanded sidebar over the page;
+   crossing back out keeps a drawer the user had open as the expanded column it
+   becomes, rather than re-deriving it from storage — a rotation into a width
+   whose default is the rail would otherwise put away a panel the user was
+   reading. The stored preference is re-applied, never rewritten — a resize is
+   not a decision. */
+var _netHubWasDrawer = netHubIsDrawer();
 var _netHubResizeTimer = 0;
 window.addEventListener('resize', function () {
   if (_netHubResizeTimer) clearTimeout(_netHubResizeTimer);
   _netHubResizeTimer = setTimeout(function () {
     _netHubResizeTimer = 0;
-    setNetHubCollapsed(currentNetHubCollapsed(), false);
+    var drawer = netHubIsDrawer();
+    if (drawer === _netHubWasDrawer) return;
+    var wasDrawer = _netHubWasDrawer;
+    _netHubWasDrawer = drawer;
+    if (drawer) {
+      setNetHubCollapsed(initialNetHubCollapsed(), false);
+      return;
+    }
+    var body = document.getElementById('sec-entries-body');
+    var wasOpen = wasDrawer && body && body.classList.contains('drawer-open');
+    setNetHubCollapsed(wasOpen ? false : currentNetHubCollapsed(), false);
   }, 120);
 });
 
-setNetHubCollapsed(currentNetHubCollapsed(), false);
+setNetHubCollapsed(initialNetHubCollapsed(), false);
 
 
 function loadForwards() {

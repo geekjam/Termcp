@@ -783,17 +783,8 @@ window.addEventListener('pagehide', function () {
  * and a comma-batch delete with per-name results. The selection state itself
  * lives in dialogs.js; this block binds the controls and does the work. */
 
-function selectedNodeNames() {
-  if (!nodeSelectModeOn()) return [];
-  var names = selectableNodeNames().filter(function (n) { return _nodeSelIds.has(n); });
-  // Name order, which is the order the grid shows them in.
-  names.sort(function (a, b) { return a.localeCompare(b); });
-  return names;
-}
-
-function openSelectedNodes() {
-  var names = selectedNodeNames();
-  if (!names.length) return;
+function openSelectedNodes(names) {
+  if (!names || !names.length) return;
   /* In drawer mode the windows open under the panel, so the panel leaves the
      way a single card click's does — staying up would cover exactly what just
      launched. */
@@ -816,8 +807,8 @@ function openSelectedNodes() {
           if (settled !== names.length) return;
           // The ticks are spent: clear the selection, keep the mode on so
           // another batch can be picked without reaching for the switch.
-          _nodeSelIds.clear();
-          renderConnGrid(window._lastConnections || [], connBannerText());
+          _nodeBatch.clear();
+          _nodeBatch.repaint();
           if (failed.length) showCopyToast(t('nethub.batch.openFailed', { count: failed.length, msg: failed[0] }));
         });
     }, i * 150);
@@ -835,9 +826,8 @@ function selectionHasInternal(names) {
   return false;
 }
 
-function exportSelectedNodes() {
-  var names = selectedNodeNames();
-  if (!names.length) return;
+function exportSelectedNodes(names) {
+  if (!names || !names.length) return;
   if (selectionHasInternal(names)) {
     showCopyToast(t('nethub.batch.exportInternal'));
     return;
@@ -869,9 +859,8 @@ function deleteResourcesBatch(resource, ids) {
   });
 }
 
-function deleteSelectedNodes() {
-  var names = selectedNodeNames();
-  if (!names.length) return;
+function deleteSelectedNodes(names) {
+  if (!names || !names.length) return;
   if (selectionHasInternal(names)) {
     showCopyToast(t('nethub.batch.deleteInternal'));
     return;
@@ -894,7 +883,7 @@ function deleteSelectedNodes() {
       var failed = [];
       (results || []).forEach(function (r) {
         if (r.ok || r.code === 'connection_not_found') {
-          _nodeSelIds.delete(r.id);
+          _nodeBatch.deselect(r.id);
         } else {
           failed.push(r.id + ': ' + (r.error || r.code || 'failed'));
         }
@@ -909,82 +898,6 @@ function deleteSelectedNodes() {
     });
   });
 }
-
-// The play split-key's dropdown, as plain functions: the NetHub wiring's
-// Escape handler folds it before it folds the selection mode, so the state has
-// to be reachable from there.
-function nodeOpenMenuIsOpen() {
-  var menu = document.getElementById('nethub-open-menu');
-  return !!(menu && !menu.hidden);
-}
-
-function closeNodeOpenMenu() {
-  var wasOpen = nodeOpenMenuIsOpen();
-  var menu = document.getElementById('nethub-open-menu');
-  var caret = document.getElementById('nethub-open-caret');
-  if (menu) menu.hidden = true;
-  if (caret) caret.setAttribute('aria-expanded', 'false');
-  return wasOpen;
-}
-
-function toggleNodeOpenMenu() {
-  var menu = document.getElementById('nethub-open-menu');
-  if (!menu) return;
-  menu.hidden = !menu.hidden;
-  var caret = document.getElementById('nethub-open-caret');
-  if (caret) caret.setAttribute('aria-expanded', String(!menu.hidden));
-}
-
-// The toolbar's wiring. dialogs.js owns the selection state; this block only
-// binds the controls, the same split the drawer's collapse uses (see the
-// NetHub wiring below).
-(function () {
-  var toggle = document.getElementById('nethub-select-toggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', function (e) {
-    e.stopPropagation();
-    setNodeSelectMode(!nodeSelectModeOn());
-  });
-  var selAll = document.getElementById('nethub-sel-invert');
-  if (selAll) selAll.addEventListener('click', function (e) {
-    e.stopPropagation();
-    var names = selectableNodeNames();
-    var allSelected = names.length > 0 && names.every(function (n) { return _nodeSelIds.has(n); });
-    names.forEach(function (n) {
-      if (allSelected) _nodeSelIds.delete(n);
-      else _nodeSelIds.add(n);
-    });
-    renderConnGrid(window._lastConnections || [], connBannerText());
-  });
-  // The play split-key: the wide half opens every ticked host, the caret
-  // unfolds export and delete. Any click outside the menu folds it; Escape
-  // folds it here first, before the mode-exit handler below folds the mode.
-  var caret = document.getElementById('nethub-open-caret');
-  if (caret) caret.addEventListener('click', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleNodeOpenMenu();
-  });
-  document.addEventListener('click', function (e) {
-    if (!nodeOpenMenuIsOpen()) return;
-    if (e.target.closest('#nethub-open-menu') || e.target.closest('#nethub-open-caret')) return;
-    closeNodeOpenMenu();
-  });
-  var menuEl = document.getElementById('nethub-open-menu');
-  if (menuEl) menuEl.addEventListener('click', function (e) { e.stopPropagation(); });
-  var menuExport = document.getElementById('nethub-menu-export');
-  if (menuExport) menuExport.addEventListener('click', function () {
-    closeNodeOpenMenu();
-    exportSelectedNodes();
-  });
-  var menuDelete = document.getElementById('nethub-menu-delete');
-  if (menuDelete) menuDelete.addEventListener('click', function () {
-    closeNodeOpenMenu();
-    deleteSelectedNodes();
-  });
-  var openBtn = document.getElementById('nethub-batch-open');
-  if (openBtn) openBtn.addEventListener('click', function (e) { e.stopPropagation(); openSelectedNodes(); });
-})();
 
 /* The host list's launch-options dialog. Its entry point is a host card, so the
    window it starts is centred like the card's own click — see dialogs.js. The
@@ -1258,11 +1171,16 @@ startUIWebSocket();
 
 // The header labels the build (the string `termcp -version` prints first). The
 // page is static, so the number is fetched once; a failure just leaves it blank.
+// The update check rides the same fetch: it needs the version, and a separate
+// request for a number this build already has would be a second source of truth
+// that could disagree with the label.
 fetch(apiPath('/api/version'))
   .then(function (r) { return r.ok ? r.json() : null; })
   .then(function (j) {
+    var version = j && j.version ? j.version : '';
     var el = document.getElementById('app-version');
-    if (el && j && j.version) el.textContent = j.version;
+    if (el && version) el.textContent = version;
+    if (typeof checkForUpdate === 'function') checkForUpdate(version);
   })
   .catch(function () {});
 
@@ -1285,8 +1203,10 @@ fetch(apiPath('/api/version'))
      load (it cannot exist before this expression runs). Re-apply that state so
      a narrow first paint with a stored desktop preference shows the overlay
      AND its scrim together — otherwise the body opens behind a scrim that
-     never learns it is open. */
-  setNetHubCollapsed(currentNetHubCollapsed(), false);
+     never learns it is open. The initial state is the drawer-aware one: below
+     the breakpoint the panel arrives closed, and re-applying the raw stored
+     preference here would open it again anyway. */
+  setNetHubCollapsed(initialNetHubCollapsed(), false);
 
   /* The header button and the rail's expand key run the same toggle, so the
      control is one decision with two doors. Capture phase keeps a click from
@@ -1308,12 +1228,11 @@ fetch(apiPath('/api/version'))
   scrim.addEventListener('click', function () { setNetHubCollapsed(true, false); });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
-    /* Escape folds the innermost layer first: the open dropdown, then the
-       selection mode, then the drawer. Leaving the mode is the smaller undo,
-       and closing the panel would also take the batch keys out of sight while
-       their selection is still being picked. */
-    if (closeNodeOpenMenu()) return;
-    if (nodeSelectModeOn()) { setNodeSelectMode(false); return; }
+    /* The batch bar folds its own menu and mode first, and only for the column
+       the key was pressed in (batch-bar.js); what is left here is the drawer:
+       closing the panel would also take the batch keys out of sight while their
+       selection is still being picked. */
+    if (_nodeBatch.isOn()) return;
     if (netHubIsDrawer() && !netHubCollapsed()) setNetHubCollapsed(true, false);
   });
   /* Choosing a node from the overlay should reveal what it opened rather than
@@ -1322,7 +1241,7 @@ fetch(apiPath('/api/version'))
      can be ticked in one look. */
   body.addEventListener('click', function (e) {
     if (!e.target.closest('.conn-tile') || !netHubIsDrawer()) return;
-    if (nodeSelectModeOn()) return;
+    if (_nodeBatch.isOn()) return;
     setNetHubCollapsed(true, false);
   });
   if (add) {

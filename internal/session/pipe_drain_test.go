@@ -1,16 +1,50 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/open-mcp-ai/termcp/internal/buffer"
 	"github.com/open-mcp-ai/termcp/internal/message"
 	"github.com/open-mcp-ai/termcp/internal/storage"
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
+
+// The log and the live buffer must agree even when both output pumps deliver
+// chunks at once. Returning from the serialized log append does not serialize
+// the following buffer append: the other pump can overtake it there.
+func TestPipeReadersKeepLogAndBufferOrder(t *testing.T) {
+	store := storage.New(t.TempDir())
+	mm := message.NewManager(store)
+	parent := &Session{Session: api.Session{ID: "pipe-order"}, msgMgr: mm}
+	cs := &ChildShell{ID: "main", parent: parent, buf: buffer.New(0)}
+	t.Cleanup(func() {
+		mm.ForgetSession(parent.ID)
+		_ = store.Close()
+	})
+	const size = 256 << 10
+	cs.pipeToBuffer(bytes.NewReader(bytes.Repeat([]byte("O"), size)), false)
+	cs.pipeToBuffer(bytes.NewReader(bytes.Repeat([]byte("E"), size)), true)
+	cs.pipeWG.Wait()
+	retained, _, err := cs.OutputByteRange(0, 2*size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	persisted, _, err := mm.OutputByteRange(parent.ID, cs.ID, 0, 2*size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(retained, persisted) {
+		t.Fatalf("live buffer has %d bytes, log has %d; output order diverged", len(retained), len(persisted))
+	}
+	if stdout, stderr := bytes.Count(retained, []byte("O")), bytes.Count(retained, []byte("E")); stdout != size || stderr != size {
+		t.Fatalf("retained stdout=%d stderr=%d, want %d of each", stdout, stderr, size)
+	}
+}
 
 // TestPipeShellDrainsOutputBeforeSealingBuffer locks the drain contract: the SSH
 // session reports exit-status as soon as the process is gone, which can happen

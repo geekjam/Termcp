@@ -39,6 +39,21 @@ func (c *captureHandler) snapshot() []slog.Record {
 	return out
 }
 
+// toolRecords excludes lifecycle logs from sessions started by earlier tests.
+// Those goroutines share slog.Default while their teardown finishes.
+func (c *captureHandler) toolRecords(name string) []slog.Record {
+	var records []slog.Record
+	for _, record := range c.snapshot() {
+		if record.Message != "tool call start" && record.Message != "tool call end" {
+			continue
+		}
+		if tool, ok := attrValue(record, "tool"); ok && tool.String() == name {
+			records = append(records, record)
+		}
+	}
+	return records
+}
+
 func withCapturedLogger(t *testing.T) *captureHandler {
 	t.Helper()
 	prev := slog.Default()
@@ -95,7 +110,7 @@ func TestWithLogging_LogsDebugEntryAndExit(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("test_tool")
 	if len(records) < 2 {
 		t.Fatalf("expected at least 2 records (entry+exit), got %d", len(records))
 	}
@@ -133,7 +148,7 @@ func TestWithLogging_LogsErrorOnGoError(t *testing.T) {
 		t.Fatalf("expected wantErr passthrough, got %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("test_tool")
 	if len(records) < 2 {
 		t.Fatalf("expected at least 2 records, got %d", len(records))
 	}
@@ -162,7 +177,7 @@ func TestWithLogging_LogsWarnOnIsErrorResult(t *testing.T) {
 		t.Fatalf("expected nil err, got %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("test_tool")
 	if len(records) < 2 {
 		t.Fatalf("expected at least 2 records, got %d", len(records))
 	}
@@ -201,7 +216,7 @@ func TestWithLogging_ExtractsSessionAndReaderIDs(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("test_tool")
 	if len(records) < 1 {
 		t.Fatal("expected entry record")
 	}
@@ -236,7 +251,7 @@ func TestWithLogging_OmitsAbsentSessionAndReaderIDs(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("test_tool")
 	if len(records) < 1 {
 		t.Fatal("expected entry record")
 	}
@@ -267,7 +282,7 @@ func TestWithLogging_ExtractsTextParam(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("shell_input")
 	if len(records) < 1 {
 		t.Fatal("expected entry record")
 	}
@@ -300,7 +315,7 @@ func TestWithLogging_ExtractsCommandParam(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("session_start")
 	if len(records) < 1 {
 		t.Fatal("expected entry record")
 	}
@@ -333,7 +348,7 @@ func TestWithLogging_ExtractsModeParam(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("session_start")
 	entry := records[0]
 	v, ok := attrValue(entry, "mode")
 	if !ok {
@@ -363,7 +378,7 @@ func TestWithLogging_ExtractsRowsAndCols(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("session_start")
 	entry := records[0]
 
 	for _, key := range []string{"rows", "cols"} {
@@ -397,7 +412,7 @@ func TestWithLogging_ExtractsTimeoutAndShellKey(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("press_key")
 	entry := records[0]
 
 	if v, ok := attrValue(entry, "timeout"); !ok {
@@ -438,7 +453,7 @@ func TestWithLogging_ExtractsForceAndGracePeriod(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("terminate_session")
 	entry := records[0]
 
 	if v, ok := attrValue(entry, "force"); !ok {
@@ -473,7 +488,7 @@ func TestWithLogging_ExtractsArgsParam(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("session_start")
 	entry := records[0]
 	v, ok := attrValue(entry, "args")
 	if !ok {
@@ -508,7 +523,7 @@ func TestWithLogging_TruncatesArgsOver10(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("session_start")
 	entry := records[0]
 	v, ok := attrValue(entry, "args")
 	if !ok {
@@ -532,7 +547,7 @@ func TestWithLogging_LogsOutputPreviewOnExit(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("read_output")
 	exit := records[len(records)-1]
 	v, ok := attrValue(exit, "output_preview")
 	if !ok {
@@ -556,7 +571,7 @@ func TestWithLogging_TruncatesLongOutputPreview(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("read_output")
 	exit := records[len(records)-1]
 	v, ok := attrValue(exit, "output_preview")
 	if !ok {
@@ -573,8 +588,11 @@ func TestWithLogging_TruncatesLongOutputPreview(t *testing.T) {
 
 func TestWithLogging_TruncatesLongText(t *testing.T) {
 	cap := withCapturedLogger(t)
+	// Session exit watchers can still log while this test owns the global logger.
+	slog.Debug("unrelated session cleanup")
 
 	h := func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		slog.Debug("unrelated background output")
 		return mcpgo.NewToolResultText("ok"), nil
 	}
 	wrapped := withLogging("shell_input", h)
@@ -591,7 +609,7 @@ func TestWithLogging_TruncatesLongText(t *testing.T) {
 		t.Fatalf("wrapped returned error: %v", err)
 	}
 
-	records := cap.snapshot()
+	records := cap.toolRecords("shell_input")
 	if len(records) < 1 {
 		t.Fatal("expected entry record")
 	}

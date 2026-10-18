@@ -38,6 +38,7 @@ func waitForHistoryText(t *testing.T, cs *ChildShell, want string) {
 func waitForHistoryTextCount(t *testing.T, cs *ChildShell, want string, count int) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
+	var last []byte
 	for time.Now().Before(deadline) {
 		out, _, err := cs.OutputByteRange(0, 1<<20)
 		if err != nil {
@@ -46,9 +47,40 @@ func waitForHistoryTextCount(t *testing.T, cs *ChildShell, want string, count in
 		if strings.Count(string(out), want) >= count {
 			return
 		}
+		last = out
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %d copies of %q in process output", count, want)
+	t.Fatalf("timed out waiting for %d copies of %q in process output; last output: %q", count, want, last)
+}
+
+func waitForHistoryShellReady(t *testing.T, cs *ChildShell) {
+	t.Helper()
+	command := "printf 'HISTORY_SHELL_%s\\n' READY"
+	if runtime.GOOS == "windows" {
+		command = "Write-Output ('HISTORY_SHELL_' + 'READY')"
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	var last []byte
+	for time.Now().Before(deadline) {
+		if err := cs.SendTerminalBytes([]byte(testShellInput(command)), false); err != nil {
+			t.Fatal(err)
+		}
+		probeDeadline := time.Now().Add(time.Second)
+		for time.Now().Before(probeDeadline) && time.Now().Before(deadline) {
+			out, _, err := cs.OutputByteRange(0, 1<<20)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Only executed output contains the full marker; terminal redraws
+			// and echoed input cannot satisfy the readiness probe.
+			if strings.Contains(string(out), "HISTORY_SHELL_READY") {
+				return
+			}
+			last = out
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	t.Fatalf("shell did not execute readiness probe; last output: %q", last)
 }
 
 func historyInputMarks(t *testing.T, mm *message.Manager, sessionID, shellID string) []api.LogStatus {
@@ -164,7 +196,17 @@ func TestHistoryShellContinuationIsOnlyALineMark(t *testing.T) {
 			_ = mgr.Delete(info.ID)
 		}
 	})
-	s, err := mgr.Create(testConfig(testShell(), testInteractiveShellArgs(), api.ModePTY, ""))
+	args := testInteractiveShellArgs()
+	if runtime.GOOS == "windows" {
+		// Exercise PowerShell's multiline parser with a plain console reader.
+		// PSReadLine redraws and optional terminal protocols are independent of
+		// the input-history mark this test checks.
+		startup := "Remove-Module PSReadLine -ErrorAction SilentlyContinue; " +
+			"function global:PSConsoleHostReadLine { [Console]::ReadLine() }; " +
+			"function global:prompt { 'history> ' }"
+		args = append(args, "-NoExit", "-Command", startup)
+	}
+	s, err := mgr.Create(testConfig(testShell(), args, api.ModePTY, ""))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,11 +214,15 @@ func TestHistoryShellContinuationIsOnlyALineMark(t *testing.T) {
 	if cs == nil {
 		t.Fatal("session has no primary shell")
 	}
+	// ConPTY emits terminal setup bytes before PowerShell reads input. A
+	// temporarily idle log alone does not establish a live command reader.
+	waitForHistoryShellReady(t, cs)
 	waitForIdleBytes(t, mm, s.ID, cs.ID)
+	before := len(historyInputMarks(t, mm, s.ID, cs.ID))
 
-	first, finish := "if true; then", "echo HISTORY_CONTINUATION_DONE\nfi"
+	first, finish := "if true; then", "printf 'HISTORY_CONTINUATION_%s\\n' DONE\nfi"
 	if runtime.GOOS == "windows" {
-		first, finish = "if ($true) {", "Write-Output HISTORY_CONTINUATION_DONE\n}"
+		first, finish = "if ($true) {", "Write-Output ('HISTORY_CONTINUATION_' + 'DONE')\n}"
 	}
 	if err := cs.SendTerminalBytes([]byte(testShellInput(first)), false); err != nil {
 		t.Fatal(err)
@@ -185,16 +231,25 @@ func TestHistoryShellContinuationIsOnlyALineMark(t *testing.T) {
 	// byte log is appended before its output status mark, so a concurrent read
 	// can momentarily see bytes under the preceding input mark.
 	waitForIdleBytes(t, mm, s.ID, cs.ID)
-	if got := historyInputMarks(t, mm, s.ID, cs.ID); len(got) != 1 || got[0] != api.LogAPIInput {
-		t.Fatalf("continuation line marks = %v, want [i]", got)
+	if got := historyInputMarks(t, mm, s.ID, cs.ID); len(got) != before+1 || got[before] != api.LogAPIInput {
+		t.Fatalf("continuation line marks = %v, want one i after %d readiness marks", got, before)
 	}
 	// The completion token is sent only after the first assertion. The shell
 	// cannot have run that command at the time the first i mark was written.
-	if err := cs.SendTerminalBytes([]byte(testShellInput(finish)), false); err != nil {
-		t.Fatal(err)
+	for _, line := range strings.Split(finish, "\n") {
+		if err := cs.SendTerminalBytes([]byte(testShellInput(line)), false); err != nil {
+			t.Fatal(err)
+		}
 	}
-	// The first copy is the command echo; the second is its executed output.
-	waitForHistoryTextCount(t, cs, "HISTORY_CONTINUATION_DONE", 2)
+	if runtime.GOOS == "windows" {
+		// PowerShell's plain console reader submits a multiline block on an
+		// empty line after the closing brace.
+		if err := cs.PressKey("enter", 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The marker is assembled by execution, independent of PSReadLine redraws.
+	waitForHistoryText(t, cs, "HISTORY_CONTINUATION_DONE")
 }
 
 // Ctrl+C abandons a partially typed line. The input-side history still records

@@ -258,6 +258,7 @@ func (cs *ChildShell) pipeToBuffer(r io.Reader, stderr bool) {
 			n, err := r.Read(buf)
 			if n > 0 {
 				chunk := buf[:n]
+				cs.outputMu.Lock()
 				// With a log attached, the log is written FIRST and the offset it
 				// returns is the one the memory buffer is told to expect: a byte's
 				// position is established by the durable log and the buffer only caches
@@ -278,6 +279,7 @@ func (cs *ChildShell) pipeToBuffer(r io.Reader, stderr bool) {
 						off, lerr = p.msgMgr.AppendOutput(p.ID, cs.ID, chunk)
 					}
 					if lerr != nil {
+						cs.outputMu.Unlock()
 						// A failed append means the durable log did not take these bytes.
 						// Keeping them only in memory would create exactly the drift this
 						// design removes, so stop the transcript rather than serve a stream
@@ -292,6 +294,7 @@ func (cs *ChildShell) pipeToBuffer(r io.Reader, stderr bool) {
 					// numbers its own bytes.
 					werr = cs.buf.Write(chunk)
 				}
+				cs.outputMu.Unlock()
 				// A closed buffer means the shell was already sealed; nothing more can be
 				// recorded, so stop rather than spin on a dead transcript.
 				if werr != nil {

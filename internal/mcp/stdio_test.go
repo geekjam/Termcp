@@ -1,7 +1,11 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
+	"fmt"
+	"io"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -13,22 +17,57 @@ import (
 // an offset. The per-stream assertions below are exact under any interleaving
 // of the two pumps, because per-stream order is what the transport preserves.
 
-func startPipeStdioSession(t *testing.T, script string) (*Server, string, string) {
+// TestMCPPipeOutputProcess provides real stdout/stderr pipes without paying for
+// a cold PowerShell startup. It stays alive until stdin closes, so reads also
+// exercise history while the process is still running.
+func TestMCPPipeOutputProcess(t *testing.T) {
+	fixture := os.Getenv("TERMCP_MCP_PIPE_FIXTURE")
+	if fixture == "" {
+		return
+	}
+	newline := "\n"
+	if runtime.GOOS == "windows" {
+		newline = "\r\n"
+	}
+	switch fixture {
+	case "streams":
+		fmt.Fprint(os.Stdout, "OUT-1"+newline)
+		fmt.Fprint(os.Stderr, "ERR-1"+newline)
+		fmt.Fprint(os.Stdout, "OUT-2"+newline)
+	case "boundary":
+		input := bufio.NewScanner(os.Stdin)
+		fmt.Fprint(os.Stdout, "PART")
+		if !input.Scan() {
+			t.Fatal("missing acknowledgement for PART")
+		}
+		fmt.Fprint(os.Stderr, "ERR"+newline)
+		if !input.Scan() {
+			t.Fatal("missing acknowledgement for ERR")
+		}
+		fmt.Fprint(os.Stdout, "OUT"+newline)
+	case "lines":
+		for i := 1; i <= 20; i++ {
+			fmt.Fprintf(os.Stdout, "LINE_%02d%s", i, newline)
+		}
+	default:
+		t.Fatalf("unknown pipe fixture %q", fixture)
+	}
+	_, _ = io.Copy(io.Discard, os.Stdin)
+	os.Exit(0) // Keep the test runner's PASS line out of the transcript.
+}
+
+func startPipeStdioSession(t *testing.T, fixture string) (*Server, string, string) {
 	t.Helper()
 	s, _, _, _ := newTestServerWithHistory(t)
 
-	var command string
-	var args []any
-	if runtime.GOOS == "windows" {
-		command = "powershell.exe"
-		args = testShellArgs("-NoLogo", "-NoProfile", "-Command", script)
-	} else {
-		command = "/bin/sh"
-		args = testShellArgs("-c", script)
+	command, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Setenv("TERMCP_MCP_PIPE_FIXTURE", fixture)
 	startRes, err := s.handleStartSession(context.Background(), makeRequest(map[string]any{
 		"command":    command,
-		"args":       args,
+		"args":       testShellArgs("-test.run=^TestMCPPipeOutputProcess$"),
 		"mode":       "pipe",
 		"ssh_config": "internal",
 	}))
@@ -49,14 +88,16 @@ func startPipeStdioSession(t *testing.T, script string) (*Server, string, string
 func waitForOutput(t *testing.T, s *Server, shellID, marker string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
+	var last string
 	for time.Now().Before(deadline) {
 		m := readOutputMap(t, s, map[string]any{"shell_id": shellID, "tail_lines": 5.0})
-		if containsLine(m["output"].(string), marker) {
+		last = m["output"].(string)
+		if containsLine(last, marker) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("timed out waiting for %q", marker)
+	t.Fatalf("timed out waiting for %q; last output: %q", marker, last)
 }
 
 // waitForSubstrings waits for every substring to appear in the default read.
@@ -137,19 +178,9 @@ func readStream(t *testing.T, s *Server, shellID, stream string, extra map[strin
 // exactly; the filter shrinks only the returned content; the cursor keeps
 // meaning raw-window end.
 func TestStreamFilter_PipeSeparatesStderrCrossOS(t *testing.T) {
-	var script string
-	if runtime.GOOS == "windows" {
-		// The sleeps keep each write in its own scheduling window: a process
-		// that writes three times across two pipes and exits immediately can
-		// lose the last frame to the transport's drain race, which is a
-		// pre-existing property of fast pipe commands, not what these tests
-		// are about.
-		script = `[Console]::Out.WriteLine('OUT-1'); Start-Sleep -m 200; [Console]::Error.WriteLine('ERR-1'); Start-Sleep -m 200; [Console]::Out.WriteLine('OUT-2'); Start-Sleep -m 200`
-	} else {
-		script = `echo OUT-1; sleep 0.2; echo ERR-1 >&2; sleep 0.2; echo OUT-2; sleep 0.2`
-	}
-	s, _, shellID := startPipeStdioSession(t, script)
-	waitForOutput(t, s, shellID, "OUT-2")
+	s, _, shellID := startPipeStdioSession(t, "streams")
+	// Both pumps must finish their writes before checking the stream index.
+	waitForSubstrings(t, s, shellID, "OUT-1", "ERR-1", "OUT-2")
 
 	// The receipt promises separate stderr for a pipe channel.
 	// (asserted on the start call in startPipeStdioSession's caller below)
@@ -196,13 +227,13 @@ func TestStreamFilter_PipeSeparatesStderrCrossOS(t *testing.T) {
 // without losing a byte: stdout "PART" (no newline), stderr "ERR\n", stdout
 // "OUT\n" reassembles, on the stdout side, into "PARTOUT\n".
 func TestStreamFilter_LineAcrossTheBoundary(t *testing.T) {
-	var script string
-	if runtime.GOOS == "windows" {
-		script = `[Console]::Out.Write('PART'); Start-Sleep -m 200; [Console]::Error.WriteLine('ERR'); Start-Sleep -m 200; [Console]::Out.WriteLine('OUT'); Start-Sleep -m 200`
-	} else {
-		script = `printf PART; sleep 0.2; echo ERR >&2; sleep 0.2; echo OUT; sleep 0.2`
-	}
-	s, _, shellID := startPipeStdioSession(t, script)
+	s, _, shellID := startPipeStdioSession(t, "boundary")
+	// Acknowledge each persisted fragment before emitting the next, so stderr
+	// really falls between the two stdout pieces regardless of pump scheduling.
+	waitForSubstrings(t, s, shellID, "PART")
+	testRunLine(t, s, shellID, "continue")
+	waitForSubstrings(t, s, shellID, "ERR")
+	testRunLine(t, s, shellID, "continue")
 	waitForSubstrings(t, s, shellID, "ERR", "OUT")
 
 	m := readStream(t, s, shellID, "o", nil)

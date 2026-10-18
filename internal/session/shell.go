@@ -56,6 +56,9 @@ type ChildShell struct {
 	// pipeWG tracks this shell's stdout/stderr reader goroutines so the final
 	// bytes can be drained into the buffer before it is sealed. See drainPipes.
 	pipeWG sync.WaitGroup
+	// outputMu keeps a log append and its live-buffer append in one order
+	// across stdout and stderr. The two pumps must not overtake each other.
+	outputMu sync.Mutex
 	// deliberateClose is set by TerminateShell/CloseChildShell so the exit
 	// watcher does not treat an intentional channel close as SSH disconnect.
 	deliberateClose bool

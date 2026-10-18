@@ -43,10 +43,10 @@ jobs:
         # races that -race cannot see. See docs/agents/testing.md.
         run: go test ./... -count=1 -shuffle=on -race -timeout 240s
 
-      - name: Stress PTY startup checks
+      - name: Stress process startup and output checks
         if: runner.os == 'Windows'
         # PowerShell parses an unquoted comma list before invoking go.
-        run: go test ./internal/mcp ./internal/session -count=3 '-cpu=1,2,4' -shuffle=on -race -timeout 180s -run '^(TestHandleSendInput_ReturnsImmediately|TestSession_PtyResizeReachesChild)$'
+        run: go test ./internal/mcp ./internal/session -count=3 '-cpu=1,2,4' -shuffle=on -race -timeout 240s -run '^(TestHandleSendInput_ReturnsImmediately|TestSession_PtyResizeReachesChild|TestStreamFilter_PipeSeparatesStderrCrossOS|TestStreamFilter_LineAcrossTheBoundary|TestFromLine_LiveSession|TestWithLogging_TruncatesLongText|TestHistoryShellContinuationIsOnlyALineMark|TestPipeReadersKeepLogAndBufferOrder)$'
 
       - name: Test pure-API build
         run: |

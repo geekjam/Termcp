@@ -2,15 +2,17 @@ package mcp
 
 import (
 	"context"
-	"runtime"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	ssh "github.com/charmbracelet/ssh"
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/open-mcp-ai/termcp/internal/extensions"
 	"github.com/open-mcp-ai/termcp/internal/forward"
+	"github.com/open-mcp-ai/termcp/internal/sshserver"
 )
 
 // blockingCommand is a command the host actually has that stays alive until its
@@ -19,21 +21,12 @@ func blockingCommand() string {
 	return "cat"
 }
 
-// exitCommand is a command that exits at once with a nonzero code, so a probe
-// observes a startup failure instead of a live process.
-func exitCommand() (string, []string) {
-	if runtime.GOOS == "windows" {
-		return "powershell.exe", []string{"-NoLogo", "-NoProfile", "-Command", "exit 3"}
-	}
-	return "bash", []string{"-c", "echo boom; exit 3"}
-}
-
 // newExtensionTestServer is newTestServer plus a running reconciler wired into
 // the server, so the extension tool is exercised against the same layer that
 // serves it for real.
-func newExtensionTestServer(t *testing.T) *Server {
+func newExtensionTestServer(t *testing.T, configure ...func(*sshserver.Server)) *Server {
 	t.Helper()
-	s := newTestServer(t)
+	s := newTestServer(t, configure...)
 	store := extensions.NewStore(t.TempDir())
 	r := extensions.NewReconciler(store, s.sessMgr, s.msgMgr, s.sshConfigs, forward.NewForwardManager())
 	r.NoInternal = s.NoInternal
@@ -273,24 +266,26 @@ func TestExtensionRetryDisabled(t *testing.T) {
 }
 
 // waitForExtensionFailure polls the listing until the extension reports a
-// failure of the given stage. The walk marks a changed template down the moment
-// it sees it, before the probe goroutine records why it is down, so a listing's
+// failure containing the given reason. The walk marks a changed template down
+// the moment it sees it, before the probe records why it is down, so a listing's
 // status settles before its reason does — waiting on the status alone would
 // catch the window between the two.
-func waitForExtensionFailure(t *testing.T, s *Server, name, stage string) map[string]any {
+func waitForExtensionFailure(t *testing.T, s *Server, name, reason string) map[string]any {
 	t.Helper()
 	deadline := time.Now().Add(8 * time.Second)
 	for {
 		got := callExtension(t, s, map[string]any{"action": "list"})
 		for _, raw := range got["extensions"].([]any) {
 			if e, ok := raw.(map[string]any); ok && e["name"] == name {
-				if f, _ := e["last_failure"].(map[string]any); f != nil && f["stage"] == stage {
-					return e
+				if f, _ := e["last_failure"].(map[string]any); f != nil {
+					if text, _ := f["reason"].(string); strings.Contains(text, reason) {
+						return e
+					}
 				}
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("extension %q never reported a %s-stage failure, last listing: %v", name, stage, got["extensions"])
+			t.Fatalf("extension %q never reported a failure containing %q, last listing: %v", name, reason, got["extensions"])
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -300,22 +295,34 @@ func waitForExtensionFailure(t *testing.T, s *Server, name, stage string) map[st
 // command that exits immediately reports the failure, and retry after the fix
 // brings it to available.
 func TestExtensionRetryBringsUp(t *testing.T) {
-	s := newExtensionTestServer(t)
+	// Control the failure at the SSH boundary rather than relying on a host
+	// shell starting and exiting inside the probe's grace window.
+	s := newExtensionTestServer(t, func(srv *sshserver.Server) {
+		srv.RegisterCommand("test-extension-exit", func(_ context.Context, sess ssh.Session, _ []string) int {
+			_, _ = fmt.Fprintln(sess.Stderr(), "boom")
+			return 3
+		})
+	})
 	ext := extensions.Preset(extensions.KindPrompt)
 	ext.Name = "flaky"
 	ext.Target = "internal"
-	ext.Command, ext.Args = exitCommand()
+	ext.Command, ext.Args = "test-extension-exit", nil
 	if err := s.extensions.Store().Save(&ext); err != nil {
 		t.Fatal(err)
 	}
 
-	st := waitForExtensionFailure(t, s, "flaky", "start")
+	st := waitForExtensionFailure(t, s, "flaky", "exit code 3")
 	failure, _ := st["last_failure"].(map[string]any)
 	if failure == nil {
 		t.Fatalf("a failing extension should list its last failure, got %v", st)
 	}
-	if failure["reason"] == "" {
-		t.Errorf("the start-stage failure should carry the process's exit line, got %v", failure)
+	// A heavily loaded scheduler can deliver even an immediate exit after
+	// probeGrace. Both detection stages must preserve the exit reason.
+	if failure["stage"] != "start" && failure["stage"] != "session" {
+		t.Errorf("failure stage should be start or session: %v", failure)
+	}
+	if reason, _ := failure["reason"].(string); !strings.Contains(reason, "boom") {
+		t.Errorf("failure should carry the command's stderr, got %v", failure)
 	}
 
 	// Fix the template through the tool and retry.

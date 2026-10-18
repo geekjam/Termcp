@@ -44,9 +44,12 @@ func cleanupTestRuntime(t *testing.T, sessMgr *session.Manager, srv *sshserver.S
 	})
 }
 
-func newTestServer(t *testing.T) *Server {
+func newTestServer(t *testing.T, configure ...func(*sshserver.Server)) *Server {
 	t.Helper()
 	srv := startTestSSH(t)
+	for _, fn := range configure {
+		fn(srv)
+	}
 
 	dir := t.TempDir()
 	store := storage.New(dir)

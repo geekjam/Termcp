@@ -367,7 +367,6 @@ func (cs *ChildShell) startReaders() {
 			defer p.watchWG.Done()
 		}
 		<-cs.execSession.Done()
-		cs.closeOnce.Do(func() { close(cs.done) })
 		cs.mu.Lock()
 		cs.Status = api.SessionExited
 		code := cs.execSession.ExitCode()
@@ -388,6 +387,9 @@ func (cs *ChildShell) startReaders() {
 		// arrive ahead of the last stdout bytes) before sealing the buffer.
 		cs.drainPipes()
 		cs.buf.Close()
+		// Waiters that read the exit reason need the code and final transcript,
+		// including stderr bytes delivered after the transport's exit-status.
+		cs.closeOnce.Do(func() { close(cs.done) })
 		// Keep the exited ChildShell in the parent map until explicit close/Delete.
 		// This preserves its closed buffer so shell_output and WebUI can drain
 		// final output after a fast pipe command has already exited.

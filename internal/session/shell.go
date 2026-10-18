@@ -102,7 +102,8 @@ func (cs *ChildShell) Info() api.Session {
 	return s
 }
 
-// Done returns a channel that closes when the child shell process exits.
+// Done closes after the process exits, its exit code is published and its
+// remaining output has been drained into the transcript (with a bounded wait).
 func (cs *ChildShell) Done() <-chan struct{} {
 	return cs.done
 }

@@ -1445,6 +1445,9 @@ func exitReason(msgMgr *message.Manager, sessMgr *session.Manager, shell *sessio
 	if msgMgr == nil || sessMgr == nil || shell == nil {
 		return ""
 	}
+	// Status can already say exited while the output pumps still hold the tail.
+	// Done publishes the final code and transcript before the channel is removed.
+	<-shell.Done()
 	src, err := transcript.Resolve(sessMgr, msgMgr, shell.ID)
 	if err != nil {
 		return ""

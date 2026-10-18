@@ -3,6 +3,7 @@ package extensions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -24,16 +25,6 @@ import (
 // its stdin closes, so a probe finds it still running after the grace window.
 func testShellCommand() string {
 	return "cat"
-}
-
-// immediateExitCommand is a command the host actually has that exits at once
-// with a nonzero code, so a probe observes the exit inside its grace window and
-// reports a startup failure rather than a dial failure.
-func immediateExitCommand() (string, []string) {
-	if runtime.GOOS == "windows" {
-		return "powershell.exe", []string{"-NoLogo", "-NoProfile", "-Command", "exit 3"}
-	}
-	return "bash", []string{"-c", "echo boom; exit 3"}
 }
 
 // startReconciler stands up the whole runtime an extension needs: a loopback SSH
@@ -210,15 +201,26 @@ func TestReconcilerBringsUpSkillExtension(t *testing.T) {
 // ("start"). Both carry the process's own exit line, which is the part that tells
 // an author what to fix, so both stages are accepted here.
 func TestReconcilerReportsStartupFailure(t *testing.T) {
-	r := startReconciler(t)
+	// The exit travels through the real SSH channel and transcript. Starting
+	// PowerShell here can take longer than the probe and polling windows on CI;
+	// command startup speed is not the behavior this test is checking.
+	r := startReconciler(t, func(srv *sshserver.Server) {
+		srv.RegisterCommand("test-immediate-exit", func(_ context.Context, sess ssh.Session, _ []string) int {
+			_, _ = fmt.Fprintln(sess.Stderr(), "boom")
+			return 3
+		})
+	})
 	ext := Preset(KindMCP)
 	ext.Name = "broken"
 	ext.Target = "internal"
-	ext.Command, ext.Args = immediateExitCommand()
+	ext.Command, ext.Args = "test-immediate-exit", nil
 	mustSave(t, r.store, &ext)
 
 	st := waitForFailureReason(t, r, "broken", "exit code")
 	last := st.Failures[len(st.Failures)-1]
+	if !strings.Contains(last.Reason, "exit code 3") || !strings.Contains(last.Reason, "boom") {
+		t.Errorf("failure lost its exit code or stderr: %+v", last)
+	}
 	if last.Stage != "start" && last.Stage != "session" {
 		t.Errorf("failure stage = %q, want start or session", last.Stage)
 	}

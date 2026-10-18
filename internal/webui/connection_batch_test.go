@@ -35,6 +35,14 @@ func TestConnectionBatchHTTPAndTemporaryFlag(t *testing.T) {
 	}
 	export := httptest.NewRecorder()
 	mux.ServeHTTP(export, httptest.NewRequest(http.MethodGet, "/api/connections/batch", nil))
+	if export.Code != http.StatusOK || strings.Contains(export.Body.String(), "sample.example") || strings.Contains(export.Body.String(), `name = "one"`) {
+		t.Fatalf("temporary export: status=%d body=%s", export.Code, export.Body.String())
+	}
+	if err := store.SaveWithOptions("one", []byte(profile), false); err != nil {
+		t.Fatal(err)
+	}
+	export = httptest.NewRecorder()
+	mux.ServeHTTP(export, httptest.NewRequest(http.MethodGet, "/api/connections/batch", nil))
 	if export.Code != http.StatusOK || !strings.Contains(export.Body.String(), `name = "one"`) {
 		t.Fatalf("export: status=%d body=%s", export.Code, export.Body.String())
 	}
@@ -128,11 +136,15 @@ func TestConnectionBatchDeleteHTTP(t *testing.T) {
 	}
 }
 
-// names=a,b filters the exported TOML to exactly the named profiles; a name
-// that no longer resolves is skipped rather than failing the download, and no
-// names parameter keeps exporting everything.
+// names=a,b filters the exported TOML to the named persistent profiles; temporary
+// and missing profiles are skipped, and no names parameter exports all persistent
+// profiles.
 func TestConnectionExportSelectedHTTP(t *testing.T) {
-	_, _, mux := newConnectionTestHandler(t)
+	_, store, mux := newConnectionTestHandler(t)
+	profile := "kind = \"remote\"\nhost = \"temporary.example\"\nuser = \"tester\"\npassword = \"placeholder\"\n"
+	if err := store.SaveWithOptions("temporary", []byte(profile), true); err != nil {
+		t.Fatal(err)
+	}
 	one := httptest.NewRecorder()
 	mux.ServeHTTP(one, httptest.NewRequest(http.MethodGet, "/api/connections/batch?names=one", nil))
 	if one.Code != http.StatusOK || !strings.Contains(one.Body.String(), `name = "one"`) || strings.Contains(one.Body.String(), `name = "two"`) {
@@ -143,6 +155,18 @@ func TestConnectionExportSelectedHTTP(t *testing.T) {
 	if stale.Code != http.StatusOK || !strings.Contains(stale.Body.String(), `name = "one"`) {
 		t.Fatalf("export with stale names: status=%d body=%s", stale.Code, stale.Body.String())
 	}
+	for _, names := range []string{"temporary", "one,temporary"} {
+		t.Run(names, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/connections/batch?names="+names, nil))
+			if rr.Code != http.StatusOK || strings.Contains(rr.Body.String(), "temporary") || strings.Contains(rr.Body.String(), `name = "two"`) {
+				t.Fatalf("export naming temporary: status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if strings.Contains(names, "one") && !strings.Contains(rr.Body.String(), `name = "one"`) {
+				t.Fatal("mixed selection lost its persistent profile")
+			}
+		})
+	}
 	reserved := httptest.NewRecorder()
 	mux.ServeHTTP(reserved, httptest.NewRequest(http.MethodGet, "/api/connections/batch?names=one,internal", nil))
 	if reserved.Code != http.StatusBadRequest {
@@ -150,7 +174,7 @@ func TestConnectionExportSelectedHTTP(t *testing.T) {
 	}
 	all := httptest.NewRecorder()
 	mux.ServeHTTP(all, httptest.NewRequest(http.MethodGet, "/api/connections/batch", nil))
-	if all.Code != http.StatusOK || !strings.Contains(all.Body.String(), `name = "one"`) || !strings.Contains(all.Body.String(), `name = "two"`) {
+	if all.Code != http.StatusOK || !strings.Contains(all.Body.String(), `name = "one"`) || !strings.Contains(all.Body.String(), `name = "two"`) || strings.Contains(all.Body.String(), "temporary") {
 		t.Fatalf("export all: status=%d body=%s", all.Code, all.Body.String())
 	}
 }

@@ -158,6 +158,34 @@ func TestNoOrphanKeys(t *testing.T) {
 		referenced[m[1]] = true
 	}
 	mods := jsModules(t)
+	// Bootstrap is a separate HTML entry point; its script intentionally does
+	// not join the workspace global scope. Include every page's own scripts
+	// and markup so the same typo/orphan checks cover storage setup too.
+	pages, err := fs.Glob(Assets(), "*.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scriptRef := regexp.MustCompile(`<script src="([^"]+)"></script>`)
+	seenModules := make(map[string]bool)
+	for _, module := range mods {
+		seenModules[module] = true
+	}
+	for _, page := range pages {
+		body := readAssetLF(t, page)
+		for _, marker := range i18nAttrRe.FindAllStringSubmatch(body, -1) {
+			referenced[marker[1]] = true
+			if _, ok := cat["en"][marker[1]]; !ok {
+				t.Errorf("%s uses unknown key %q", page, marker[1])
+			}
+		}
+		for _, script := range scriptRef.FindAllStringSubmatch(body, -1) {
+			name := script[1]
+			if strings.HasPrefix(name, "static/") && !strings.Contains(name, "/xterm/") && name != "static/js/i18n-catalog.js" && !seenModules[name] {
+				mods = append(mods, name)
+				seenModules[name] = true
+			}
+		}
+	}
 	calls := 0
 	for _, f := range mods {
 		body := readAssetLF(t, f)

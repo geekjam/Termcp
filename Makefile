@@ -35,7 +35,7 @@ build:
 
 # 纯 API 构建：-tags no_webui 令二进制不嵌入 Web UI 静态资源、也不注册其路由
 # （`/`、`/api.html`、`/static/*` 一律 404），只保留 REST/MCP/WS 与 /api.md、
-# /skills.md 两份文档。产物带 api 后缀，可与完整版并存于 dist/。
+# /SKILL.md 两份文档。产物带 api 后缀，可与完整版并存于 dist/。
 build-api:
 	mkdir -p dist
 	GOOS=$(GOOS) GOARCH=$(GOARCH) go build -tags no_webui -trimpath -ldflags "$(LDFLAGS_RELEASE) $(LDFLAGS_VERSION)" -o dist/$(HBIN) .

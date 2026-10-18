@@ -1,6 +1,7 @@
 package sshconfig
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,12 +22,11 @@ type BatchImportResult struct {
 	Renamed  []BatchRename `json:"renamed,omitempty"`
 }
 
-// ExportBatch returns a TOML document containing remote profiles, including
-// temporary ones. An empty only exports every stored profile; otherwise exactly
-// the named ones are exported — a name that does not resolve is skipped rather
-// than failing the whole file, so a selection captured before a deletion still
-// downloads. The built-in internal profile is intentionally excluded in both
-// modes (the KindRemote filter below is what drops it).
+// ExportBatch returns a TOML document containing persistent remote profiles.
+// Temporary profiles are never exported, even when explicitly named. An empty
+// only exports every persistent profile; otherwise the named persistent profiles
+// are exported. A name that no longer resolves is skipped so a selection captured
+// before a deletion still downloads. The built-in internal profile is excluded.
 func (s *Store) ExportBatch(only []string) ([]byte, error) {
 	names := only
 	if len(names) == 0 {
@@ -36,14 +36,25 @@ func (s *Store) ExportBatch(only []string) ([]byte, error) {
 		}
 		names = list
 	}
+	// Keep the storage-mode check and disk read under the same lock as saves.
+	// ReadRaw is deliberately not used: it also returns temporary credentials.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	profiles := make([]map[string]any, 0, len(names))
 	for _, name := range names {
+		name = strings.TrimSpace(name)
 		if IsInternalName(name) {
 			continue
 		}
-		raw, err := s.ReadRaw(name)
+		if _, temporary := s.temporary[name]; temporary {
+			continue
+		}
+		if err := ValidateName(name); err != nil {
+			return nil, err
+		}
+		raw, err := s.readPersistentLocked(name)
 		if err != nil {
-			if len(only) > 0 && os.IsNotExist(err) {
+			if len(only) > 0 && (os.IsNotExist(err) || errors.Is(err, ErrNotFound)) {
 				continue
 			}
 			return nil, fmt.Errorf("profile %q: %w", name, err)
@@ -122,7 +133,10 @@ func (s *Store) ImportBatch(data []byte, temporary bool) (*BatchImportResult, er
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	dirs, err := os.ReadDir(s.root())
+	var dirs []os.DirEntry
+	if s.enc == nil {
+		dirs, err = os.ReadDir(s.root())
+	}
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -130,6 +144,11 @@ func (s *Store) ImportBatch(data []byte, temporary bool) (*BatchImportResult, er
 	existing["internal"] = true
 	for name := range s.temporary {
 		existing[strings.ToLower(name)] = true
+	}
+	if s.enc != nil {
+		for name := range s.enc.doc.Profiles {
+			existing[strings.ToLower(name)] = true
+		}
 	}
 	for _, dir := range dirs {
 		if dir.IsDir() && !strings.HasPrefix(dir.Name(), ".") {
@@ -151,6 +170,14 @@ func (s *Store) ImportBatch(data []byte, temporary bool) (*BatchImportResult, er
 		}
 		for _, item := range items {
 			s.temporary[item.name] = append([]byte(nil), item.data...)
+		}
+	} else if s.enc != nil {
+		next := s.cloneDocumentLocked()
+		for _, item := range items {
+			next.Profiles[item.name] = append([]byte(nil), item.data...)
+		}
+		if _, err := s.saveDocumentLocked(next); err != nil {
+			return nil, err
 		}
 	} else {
 		created := make([]string, 0, len(items))

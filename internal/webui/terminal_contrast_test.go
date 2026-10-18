@@ -67,15 +67,29 @@ func TestTerminalCellsStayLegibleOnEveryAnsiPairing(t *testing.T) {
 	}
 
 	themes := []string{"default-light", "default-dark", "cyberpunk", "matrix"}
-	page := probePage
+	// Delay the real parser beyond the old 500ms snapshot. A busy runner can
+	// delay it just as long; correctness must depend on rendering, not a timer.
+	themes = append(themes, "delayed-write")
 	for _, theme := range themes {
+		page := probePage
+		palette := theme
+		if theme == "delayed-write" {
+			palette = "cyberpunk"
+			page = strings.Replace(page, "var options =", `
+var originalWrite = Terminal.prototype.write;
+Terminal.prototype.write = function(data, callback) {
+  var term = this;
+  setTimeout(function() { originalWrite.call(term, data, callback); }, 750);
+};
+var options =`, 1)
+		}
 		// Only the palette layers are needed: the shared tokens, the theme's
 		// tokens, and the theme's own sheet (which is where matrix and cyberpunk
 		// state their ANSI colours). Concatenating them in cascade order gives
 		// the browser the same custom-property values the real page resolves,
 		// without copying or importing the rest of the theme package.
-		css := shared + "\n" + readAssetLF(t, "themes/"+theme+"/assets/static/css/tokens.css") +
-			"\n" + readAssetLF(t, "themes/"+theme+"/theme.css") + "\n" + terminalCSS
+		css := shared + "\n" + readAssetLF(t, "themes/"+palette+"/assets/static/css/tokens.css") +
+			"\n" + readAssetLF(t, "themes/"+palette+"/theme.css") + "\n" + terminalCSS
 		if err := os.WriteFile(filepath.Join(dir, "palette.css"), []byte(css), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -83,14 +97,8 @@ func TestTerminalCellsStayLegibleOnEveryAnsiPairing(t *testing.T) {
 		if err := os.WriteFile(path, []byte(page), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		out, err := exec.Command(chrome,
-			"--headless=new", "--disable-gpu", "--no-sandbox",
-			"--virtual-time-budget=5000", "--dump-dom",
-			"file:///"+filepath.ToSlash(path)).CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s: headless browser failed: %v\n%s", theme, err, out)
-		}
-		checkAnsiGridLegible(t, theme, probeResult(t, theme, string(out)))
+		out := renderedProbeDOM(t, chrome, path)
+		checkAnsiGridLegible(t, theme, probeResult(t, theme, out))
 	}
 }
 
@@ -306,8 +314,11 @@ if (!isFinite(options.minimumContrastRatio) || options.minimumContrastRatio < 1)
     }
     lines.push(row + '\u001b[0m');
   }
-  t.write(lines.join('\r\n') + '\r\n');
-  setTimeout(function () {
+  // Parsing and DOM rendering are asynchronous. A fixed timer can observe the
+  // initial empty rows on a busy host, even if it fires after write() returns.
+  var parsed = false;
+  var rendered = t.onRender(function () {
+    if (!parsed) return;
     var rows = document.getElementById('t').querySelectorAll('.xterm-rows > div');
     var grid = [];
     [].forEach.call(rows, function (r, fi) {
@@ -320,7 +331,12 @@ if (!isFinite(options.minimumContrastRatio) || options.minimumContrastRatio < 1)
       grid.push(cells);
     });
     document.title = 'RESULT::' + JSON.stringify({ratio: options.minimumContrastRatio, theme: theme, rows: grid});
-  }, 500);
+    rendered.dispose();
+  });
+  t.write(lines.join('\r\n') + '\r\n', function () {
+    parsed = true;
+    t.refresh(0, 15);
+  });
 }
 </script>
 `

@@ -67,7 +67,7 @@
 
     <div class="card">
       <h3>Authentication</h3>
-      <p class="muted" style="margin-top:0">When termcp starts with <code class="inline">--auth-token</code> / <code class="inline">--auth-hash</code> (or the matching environment variable), the same token protects Web UI, REST, MCP, and WebSocket. (Only the read-only documentation endpoints <code class="inline">/api.md</code> and <code class="inline">/skills.md</code> stay open without credentials so agents and scripts can fetch them before configuring a token.)</p>
+      <p class="muted" style="margin-top:0">When termcp starts with <code class="inline">--auth-token</code> / <code class="inline">--auth-hash</code> (or the matching environment variable), the same token protects Web UI, REST, MCP, and WebSocket. (Only the read-only documentation endpoints <code class="inline">/api.md</code> and <code class="inline">/SKILL.md</code> stay open without credentials so agents and scripts can fetch them before configuring a token.)</p>
       <table>
         <thead><tr><th>Client</th><th>How to authenticate</th></tr></thead>
         <tbody>
@@ -86,12 +86,25 @@
       <div class="ep">
         <code id="url-skill"></code>
         <button type="button" class="copy-btn" data-copy="url-skill">Copy</button>
-        <a class="copy-btn" href="/skills.md" download>Download</a>
+        <a class="copy-btn" href="/SKILL.md" download="SKILL.md">Download SKILL.md</a>
       </div>
+      <p><label for="skill-agent">Install for </label><select id="skill-agent">
+        <option value="claude">Claude Code — user</option>
+        <option value="codex">Codex / shared agents — user</option>
+        <option value="claude-project">Claude Code — current project</option>
+        <option value="codex-project">Codex / shared agents — current project</option>
+      </select></p>
+      <h4>macOS / Linux / Git Bash</h4>
       <div class="block">
         <button type="button" class="copy-btn" data-copy="cfg-skill-install">Copy</button>
         <pre id="cfg-skill-install"></pre>
       </div>
+      <h4>Windows PowerShell</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-skill-install-powershell">Copy</button>
+        <pre id="cfg-skill-install-powershell"></pre>
+      </div>
+      <p class="muted">Project installs use the directory where you run the command. A failed download leaves an existing skill intact. Restart the agent session after installing.</p>
     </div>
 
     <div class="card">
@@ -101,10 +114,10 @@
         <thead><tr><th>Document</th><th>URL</th><th>When to use it</th></tr></thead>
         <tbody>
           <tr><td><a href="/api.md">api.md</a></td><td><code class="inline" id="url-api-md"></code></td><td>You will drive termcp over HTTP yourself (REST/WebSocket): endpoints, bodies, output-cursor semantics.</td></tr>
-          <tr><td><a href="/skills.md">skills.md</a></td><td><code class="inline" id="url-skill-md"></code></td><td>Install once into a skills directory when the curl workflow should be available on demand in later tasks.</td></tr>
+          <tr><td><a href="/SKILL.md">SKILL.md</a></td><td><code class="inline" id="url-skill-md"></code></td><td>Install once into a skills directory when the curl workflow should be available on demand in later tasks.</td></tr>
         </tbody>
       </table>
-      <p class="muted">The skill is served flat at <code class="inline">/skills.md</code> (as guessable as <code class="inline">/api.md</code>), but it is a real Agent Skill: save it as <code class="inline">termcp/SKILL.md</code> — Claude Code reads <code class="inline">~/.claude/skills/</code>, other agents <code class="inline">~/.agents/skills/</code>. The folder name is what a skill loader discovers; restart the agent session afterwards.</p>
+      <p class="muted">The skill is served flat at <code class="inline">/SKILL.md</code> (as guessable as <code class="inline">/api.md</code>), but it is a real Agent Skill: save it as <code class="inline">termcp/SKILL.md</code> — Claude Code reads <code class="inline">~/.claude/skills/</code>, other agents <code class="inline">~/.agents/skills/</code>. The folder name is what a skill loader discovers; restart the agent session afterwards.</p>
     </div>
 
     <h2 id="clients">3. Client config</h2>
@@ -120,12 +133,42 @@
         <button type="button" class="copy-btn" data-copy="cfg-stream-cli">Copy</button>
         <pre id="cfg-stream-cli"></pre>
       </div>
-      <h4>stdio (local subprocess)</h4>
+      <h4>stdio bridge to this instance (termcp on PATH)</h4>
       <div class="block">
         <button type="button" class="copy-btn" data-copy="cfg-stdio-cli">Copy</button>
         <pre id="cfg-stdio-cli"></pre>
       </div>
-      <p class="muted">The client runs this command as its local MCP server: it ensures a background instance at this page's address — flags appear only when they are not the defaults — and relays MCP over stdin/stdout. Against an instance you already manage, a bare <code class="inline">termcp stdio</code> is enough.</p>
+      <h4>Start a local instance automatically (Node.js + npm)</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-local-cli">Copy</button>
+        <pre id="cfg-local-cli"></pre>
+      </div>
+      <p class="muted">The bridge connects to this page's existing instance, preserving its scheme, host and port. The npm command starts an instance on the agent's own machine. These commands use user scope; replace <code class="inline">--scope user</code> with <code class="inline">--scope project</code> for a project install. Verify with <code class="inline">claude mcp get termcp</code>, then restart the agent session.</p>
+    </div>
+
+    <div class="card">
+      <h3>Codex CLI</h3>
+      <h4>Streamable HTTP</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-codex-cli">Copy</button>
+        <pre id="cfg-codex-cli"></pre>
+      </div>
+      <h4>Streamable HTTP with authentication</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-codex-auth-cli">Copy</button>
+        <pre id="cfg-codex-auth-cli"></pre>
+      </div>
+      <h4>stdio bridge to this instance (termcp on PATH)</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-codex-stdio-cli">Copy</button>
+        <pre id="cfg-codex-stdio-cli"></pre>
+      </div>
+      <h4>Start a local instance automatically (Node.js + npm)</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-codex-local-cli">Copy</button>
+        <pre id="cfg-codex-local-cli"></pre>
+      </div>
+      <p class="muted">Codex uses <code class="inline">/stream</code> for direct HTTP connections. For authentication, set <code class="inline">TERMCP_AUTH_TOKEN</code> in the environment that launches the agent; the command stores the variable name. Verify with <code class="inline">codex mcp get termcp</code>, then restart the agent session.</p>
     </div>
 
     <div class="card">
@@ -141,12 +184,18 @@
         <button type="button" class="copy-btn" data-copy="cfg-stream-json">Copy</button>
         <pre id="cfg-stream-json"></pre>
       </div>
+      <h4>Authenticated Claude Code project config (.mcp.json)</h4>
+      <div class="block">
+        <button type="button" class="copy-btn" data-copy="cfg-stream-auth-json">Copy</button>
+        <pre id="cfg-stream-auth-json"></pre>
+      </div>
+      <p class="muted">Claude Code expands the environment reference in <code class="inline">.mcp.json</code>. Set <code class="inline">TERMCP_AUTH_TOKEN</code> before launching it. Other clients may require their own header configuration.</p>
       <h4>stdio (local subprocess)</h4>
       <div class="block">
         <button type="button" class="copy-btn" data-copy="cfg-stdio-json">Copy</button>
         <pre id="cfg-stdio-json"></pre>
       </div>
-      <p class="muted">stdio clients launch the bridge on their own machine. If the instance requires authentication, pass the credential through the environment — <code class="inline">"env": {"TERMCP_AUTH_TOKEN": "&lt;token&gt;"}</code>, or <code class="inline">TERMCP_AUTH_HASH</code> when only the hash is kept — not in argv or the URL.</p>
+      <p class="muted">stdio clients launch the bridge on their own machine. If the instance requires authentication, make <code class="inline">TERMCP_AUTH_TOKEN</code> (or <code class="inline">TERMCP_AUTH_HASH</code>) available in the bridge's environment.</p>
     </div>
 
     <div class="card">
@@ -175,10 +224,10 @@
           <tr><td>GET / POST</td><td><code class="inline">/sse</code> + <code class="inline">/message</code></td><td>MCP SSE</td></tr>
           <tr><td>—</td><td><code class="inline">/stream</code></td><td>MCP Streamable HTTP</td></tr>
           <tr><td>GET</td><td><code class="inline">/api/ui/ws</code></td><td>Browser terminal WebSocket</td></tr>
-          <tr><td>GET</td><td><code class="inline">/api.md</code> · <code class="inline">/skills.md</code></td><td>Agent docs (markdown, no MCP needed; same docs as MCP resources)</td></tr>
+          <tr><td>GET</td><td><code class="inline">/api.md</code> · <code class="inline">/SKILL.md</code></td><td>Agent docs (markdown, no MCP needed; same docs as MCP resources)</td></tr>
         </tbody>
       </table>
-      <p class="muted">The API reference is <a href="/api.md">/api.md</a>; the curl skill is installable from <a href="/skills.md">/skills.md</a>.</p>
+      <p class="muted">The API reference is <a href="/api.md">/api.md</a>; the curl skill is installable from <a href="/SKILL.md">/SKILL.md</a>.</p>
     </div>
 
     <div class="card">
@@ -241,16 +290,55 @@
 
     // Agent-facing docs: same bytes over HTTP and as MCP resources. The skill
     // URL is the download address shown in the "Agent docs & skill" card.
-    var skill = origin + '/skills.md';
+    var skill = origin + '/SKILL.md';
     setText('url-skill', skill);
     setText('url-skill-md', skill);
     setText('url-api-md', origin + '/api.md');
-    setText('cfg-skill-install',
-      'DIR=~/.claude/skills && mkdir -p "$DIR/termcp" && curl -fsS ' + skill +
-      ' -o "$DIR/termcp/SKILL.md"   # other agents: DIR=~/.agents/skills');
+    function shellQuote(value) {
+      return "'" + value.replace(/'/g, "'\\''") + "'";
+    }
 
-    setText('cfg-sse-cli', 'claude mcp add --transport sse termcp ' + sse);
-    setText('cfg-stream-cli', 'claude mcp add --transport http termcp ' + stream);
+    function powershellQuote(value) {
+      return "'" + value.replace(/'/g, "''") + "'";
+    }
+
+    function updateSkillInstall() {
+      var target = document.getElementById('skill-agent').value;
+      var folder = target.indexOf('codex') === 0 ? '.agents/skills/termcp' : '.claude/skills/termcp';
+      var project = target.indexOf('-project') !== -1;
+      var bashDir = project ? '"./' + folder + '"' : '"$HOME/' + folder + '"';
+      var psDir = 'Join-Path ' + (project ? '(Get-Location).Path' : '$HOME') + ' ' + powershellQuote(folder);
+      setText('cfg-skill-install', [
+        '(',
+        '  TERMCP_SKILL_DIR=' + bashDir,
+        '  mkdir -p "$TERMCP_SKILL_DIR" &&',
+        '  TERMCP_SKILL_TMP=$(mktemp "$TERMCP_SKILL_DIR/.SKILL.XXXXXX") || exit',
+        '  trap \'rm -f "$TERMCP_SKILL_TMP"\' EXIT',
+        '  curl -fsS ' + shellQuote(skill) + ' -o "$TERMCP_SKILL_TMP" &&',
+        '  mv "$TERMCP_SKILL_TMP" "$TERMCP_SKILL_DIR/SKILL.md"',
+        ')'
+      ].join('\n'));
+      setText('cfg-skill-install-powershell', [
+        '$termcpSkillDir = ' + psDir,
+        'New-Item -ItemType Directory -Force -Path $termcpSkillDir -ErrorAction Stop | Out-Null',
+        '$termcpSkillTmp = Join-Path $termcpSkillDir ([IO.Path]::GetRandomFileName())',
+        'try {',
+        '  Invoke-WebRequest -UseBasicParsing -Uri ' + powershellQuote(skill) + ' -OutFile $termcpSkillTmp -ErrorAction Stop',
+        '  Move-Item -LiteralPath $termcpSkillTmp -Destination (Join-Path $termcpSkillDir \'SKILL.md\') -Force -ErrorAction Stop',
+        '} finally {',
+        '  Remove-Item -LiteralPath $termcpSkillTmp -Force -ErrorAction SilentlyContinue',
+        '}'
+      ].join('\n'));
+    }
+    document.getElementById('skill-agent').addEventListener('change', updateSkillInstall);
+    updateSkillInstall();
+
+    setText('cfg-sse-cli', 'claude mcp add --scope user --transport sse termcp ' + shellQuote(sse));
+    setText('cfg-stream-cli', 'claude mcp add --scope user --transport http termcp ' + shellQuote(stream));
+    setText('cfg-local-cli', 'claude mcp add --scope user termcp -- npx -y @open-mcp-ai/termcp daemon stdio');
+    setText('cfg-codex-cli', 'codex mcp add termcp --url ' + shellQuote(stream));
+    setText('cfg-codex-auth-cli', 'codex mcp add termcp --url ' + shellQuote(stream) + ' --bearer-token-env-var TERMCP_AUTH_TOKEN');
+    setText('cfg-codex-local-cli', 'codex mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio');
 
     setText('cfg-sse-json', JSON.stringify({
       mcpServers: {
@@ -269,19 +357,21 @@
         }
       }
     }, null, 2));
+    setText('cfg-stream-auth-json', JSON.stringify({
+      mcpServers: {
+        termcp: {
+          type: 'http',
+          url: stream,
+          headers: { Authorization: 'Bearer ${TERMCP_AUTH_TOKEN}' }
+        }
+      }
+    }, null, 2));
 
-    // stdio: the client launches a local bridge to this instance. Host and
-    // port follow the browser origin so the snippet stays right when the
-    // instance is not on the defaults; loopback spellings stay implicit.
-    var stdioArgs = ['daemon', 'stdio'];
-    var stdioHost = location.hostname.replace(/^\[|\]$/g, '');
-    if (stdioHost && stdioHost !== '127.0.0.1' && stdioHost !== 'localhost' && stdioHost !== '::1') {
-      stdioArgs.push('--host', stdioHost);
-    }
-    if (location.port && location.port !== '18765') {
-      stdioArgs.push('--port', location.port);
-    }
-    setText('cfg-stdio-cli', 'claude mcp add termcp -- termcp ' + stdioArgs.join(' '));
+    // A bare bridge targets the already-running instance, including HTTPS and
+    // the implicit port of its scheme. Local auto-start is a separate recipe.
+    var stdioArgs = ['stdio', stream];
+    setText('cfg-stdio-cli', 'claude mcp add --scope user termcp -- termcp stdio ' + shellQuote(stream));
+    setText('cfg-codex-stdio-cli', 'codex mcp add termcp -- termcp stdio ' + shellQuote(stream));
     setText('cfg-stdio-json', JSON.stringify({
       mcpServers: {
         termcp: {

@@ -623,13 +623,42 @@ document.getElementById('conn-duplicate').onclick = function () {
   try { nameEl.focus(); } catch (e) {}
 };
 
+var connImportBusy = false;
+var connExportBusy = false;
+var connExportNames = [];
+
+function connectionTransferMessage(code) {
+  var messages = {
+    password_confirmation_mismatch: t('conn.batch.passwordMismatch'),
+    import_password_required: t('conn.batch.passwordRequired'),
+    invalid_import_password_or_file: t('conn.batch.passwordInvalid'),
+    plaintext_import_password: t('conn.batch.plaintextPassword'),
+    connection_transfer_busy: t('conn.batch.busy'),
+    invalid_connection_file: t('conn.batch.invalidFile'),
+    connection_import_uncertain: t('conn.batch.importUncertain'),
+    secure_transport_required: t('storage.error.secureTransportRequired'),
+    reserved_profile: t('nethub.batch.exportInternal')
+  };
+  return messages[code] || t('conn.batch.transferFailed');
+}
+
+function connectionTransferResponse(response) {
+  if (response.ok) return response;
+  return response.json().catch(function () { return {}; }).then(function (value) {
+    if (value.error === 'connection_import_uncertain') loadConnections();
+    throw new Error(connectionTransferMessage(value.error));
+  });
+}
+
 document.getElementById('conn-import-open').onclick = function (e) {
   e.stopPropagation();
+  if (connImportBusy) return;
   /* The dialog is a singleton and an import can take a while, so a second open
      must not inherit the previous run's readout or its half-finished button. */
   var btn = document.getElementById('conn-import-run');
   if (btn) btn.disabled = false;
   document.getElementById('conn-import-file').value = '';
+  document.getElementById('conn-import-password').value = '';
   document.getElementById('conn-import-temporary').checked = false;
   document.getElementById('conn-import-err').style.display = 'none';
   document.getElementById('conn-import-err').textContent = '';
@@ -637,8 +666,13 @@ document.getElementById('conn-import-open').onclick = function (e) {
   document.getElementById('conn-import-result').textContent = '';
   showModal('modal-conn-import');
 };
-document.getElementById('conn-import-close').onclick = function () { hideModal('modal-conn-import'); };
+document.getElementById('conn-import-close').onclick = function () {
+  document.getElementById('conn-import-password').value = '';
+  document.getElementById('conn-import-file').value = '';
+  hideModal('modal-conn-import');
+};
 document.getElementById('conn-import-run').onclick = function () {
+  if (connImportBusy) return;
   var file = document.getElementById('conn-import-file').files[0];
   var err = document.getElementById('conn-import-err');
   err.style.display = 'none';
@@ -646,12 +680,17 @@ document.getElementById('conn-import-run').onclick = function () {
   if (!file) { err.textContent = t('conn.batch.selectFile'); err.style.display = 'block'; return; }
   var btn = this;
   btn.disabled = true;
+  connImportBusy = true;
   var temporary = document.getElementById('conn-import-temporary').checked;
-  // The file is opaque to the UI; the backend parses and validates its TOML.
-  fetch(apiPath('/api/connections/batch?temporary=') + temporary, {
-    method: 'POST', headers: { 'Content-Type': 'application/toml' }, body: file
-  }).then(function (r) {
-    if (!r.ok) return r.text().then(function (message) { throw new Error(message || String(r.status)); });
+  // MultipartReader on the backend keeps this upload in memory, without
+  // ParseMultipartForm's plaintext temporary files. The file stays opaque here.
+  var upload = new FormData();
+  upload.append('file', file);
+  upload.append('password', document.getElementById('conn-import-password').value);
+  document.getElementById('conn-import-password').value = '';
+  fetch(apiPath('/api/connections/batch/import?temporary=') + temporary, {
+    method: 'POST', body: upload
+  }).then(connectionTransferResponse).then(function (r) {
     return r.json();
   }).then(function (result) {
     loadConnections();
@@ -671,16 +710,70 @@ document.getElementById('conn-import-run').onclick = function () {
   }).catch(function (e) {
     err.textContent = String(e.message || e);
     err.style.display = 'block';
-  }).finally(function () { btn.disabled = false; });
+  }).finally(function () { upload = null; file = null; connImportBusy = false; btn.disabled = false; });
 };
-/* The connections export, over the shared TOML download: the backend composes
-   the document either way (names filter or all), so the browser stays a pipe
-   for opaque bytes. */
-function downloadConnectionsToml(names) {
-  var path = apiPath('/api/connections/batch');
-  if (names && names.length) path += '?names=' + names.map(encodeURIComponent).join(',');
-  return downloadTOML(path, 'termcp-connections.toml');
+/* Empty password preserves TOML; otherwise download a portable encrypted file. */
+function downloadConnectionsToml(names, password, confirmation) {
+  var protectedFile = !!password;
+  var body = JSON.stringify({ names: names || [], password: password || '', confirm_password: confirmation || '' });
+  password = confirmation = null;
+  return fetch(apiPath('/api/connections/batch/export'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body
+  }).then(connectionTransferResponse).then(function (r) {
+    return r.blob();
+  }).then(function (blob) {
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = protectedFile ? 'termcp-connections.toml.enc' : 'termcp-connections.toml';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }).finally(function () { body = null; });
 }
+
+function openConnectionExport(names) {
+  if (connExportBusy) return;
+  connExportNames = names.slice();
+  document.getElementById('conn-export-password').value = '';
+  document.getElementById('conn-export-confirm').value = '';
+  document.getElementById('conn-export-err').style.display = 'none';
+  document.getElementById('conn-export-run').disabled = false;
+  showModal('modal-conn-export');
+}
+document.getElementById('conn-export-close').onclick = function () {
+  document.getElementById('conn-export-password').value = '';
+  document.getElementById('conn-export-confirm').value = '';
+  connExportNames = [];
+  hideModal('modal-conn-export');
+};
+document.getElementById('conn-export-run').onclick = function () {
+  if (connExportBusy) return;
+  var password = document.getElementById('conn-export-password');
+  var confirmation = document.getElementById('conn-export-confirm');
+  var error = document.getElementById('conn-export-err');
+  error.style.display = 'none';
+  if (password.value !== confirmation.value) {
+    error.textContent = t('conn.batch.passwordMismatch'); error.style.display = 'block'; return;
+  }
+  connExportBusy = true;
+  var button = this;
+  button.disabled = true;
+  var pending = downloadConnectionsToml(connExportNames, password.value, confirmation.value);
+  password.value = confirmation.value = '';
+  pending.then(function () {
+    connExportNames = [];
+    hideModal('modal-conn-export');
+  }).catch(function (e) {
+    error.textContent = t('conn.batch.exportFailed', { msg: String(e.message || e) }); error.style.display = 'block';
+  }).finally(function () { connExportBusy = false; button.disabled = false; });
+};
+window.addEventListener('pagehide', function () {
+  document.getElementById('conn-import-password').value = '';
+  document.getElementById('conn-export-password').value = '';
+  document.getElementById('conn-export-confirm').value = '';
+});
 
 /* ---- NetHub selection actions ---------------------------------------------
  * The toolbar's switch (nethub-select-toggle) re-aims the node cards: off, a
@@ -739,9 +832,14 @@ function exportSelectedNodes(names) {
     showCopyToast(t('nethub.batch.exportInternal'));
     return;
   }
-  downloadConnectionsToml(names).catch(function (e) {
-    showCopyToast(t('conn.batch.exportFailed', { msg: String(e.message || e) }));
+  var hasTemporary = (window._lastConnections || []).some(function (conn) {
+    return conn.temporary && names.indexOf(conn.name) !== -1;
   });
+  if (hasTemporary) {
+    showCopyToast(t('nethub.batch.exportTemporary'));
+    return;
+  }
+  openConnectionExport(names);
 }
 
 // One request for every id (comma-separated path, like the session routes):

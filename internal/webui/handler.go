@@ -21,7 +21,15 @@ import (
 // It reads through Assets(), so an operator-supplied --assets directory overrides the embedded copy
 // file by file and a file the directory does not contain is served from the embed.
 func embeddedStaticServer() http.Handler {
-	return noCacheForEmbeddedAssets(markdownContentType(http.FileServer(http.FS(Assets()))))
+	files := http.FileServer(http.FS(Assets()))
+	return noCacheForEmbeddedAssets(markdownContentType(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Keep the previous download URL working while serving one canonical asset.
+		if r.URL.Path == "/skills.md" {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/SKILL.md"
+		}
+		files.ServeHTTP(w, r)
+	})))
 }
 
 // noCacheForEmbeddedAssets marks the embedded UI assets no-cache. Embedded files
@@ -61,11 +69,12 @@ func markdownContentType(next http.Handler) http.Handler {
 
 // Handler serves the browser UI and JSON/SSE APIs at / and /api/... .
 type Handler struct {
-	Sessions   *session.Manager
-	MsgMgr     *message.Manager
-	SSH        *sshconfig.Store
-	ForwardMgr *forward.ForwardManager
-	NotifyMgr  *notify.Manager // active shell notification rules (read-only listing + delete)
+	configTransferMu sync.Mutex // one bounded upload/KDF operation at a time
+	Sessions         *session.Manager
+	MsgMgr           *message.Manager
+	SSH              *sshconfig.Store
+	ForwardMgr       *forward.ForwardManager
+	NotifyMgr        *notify.Manager // active shell notification rules (read-only listing + delete)
 	// Extensions drives the right-side panel: it lists the pinned,
 	// capability-trimmed sessions and reports whether each is up. nil in a build
 	// that does not run the reconciler, in which case the panel is simply empty.
@@ -165,6 +174,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/connections", h.handleListConnections)
 	mux.HandleFunc("GET /api/connections/batch", h.handleExportConnections)
 	mux.HandleFunc("POST /api/connections/batch", h.handleImportConnections)
+	transferCSRF := http.NewCrossOriginProtection()
+	mux.Handle("POST /api/connections/batch/export", transferCSRF.Handler(http.HandlerFunc(h.handleProtectedExportConnections)))
+	mux.Handle("POST /api/connections/batch/import", transferCSRF.Handler(http.HandlerFunc(h.handleProtectedImportConnections)))
 	mux.HandleFunc("GET /api/connections/{name}", h.handleGetConnection)
 	mux.HandleFunc("PUT /api/connections/{name}", h.handlePutConnection)
 	mux.HandleFunc("DELETE /api/connections/{name}", h.handleDeleteConnection)
@@ -265,6 +277,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 		// document it cannot fetch.
 		docs := embeddedStaticServer()
 		mux.Handle("/api.md", docs)
+		mux.Handle("/SKILL.md", docs)
 		mux.Handle("/skills.md", docs)
 		mux.Handle("/extensions.md", docs)
 	}

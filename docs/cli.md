@@ -12,7 +12,7 @@ termcp <subcommand> [action] [flags]
 | Flag | 默认 | 说明 |
 | --- | --- | --- |
 | `--host` | `127.0.0.1` | HTTP 绑定地址。`0.0.0.0` 监听所有网卡。绑定非 loopback **必须**配认证 token/hash，否则启动失败。 |
-| `--port` | `18765` | HTTP 端口。Web UI、MCP SSE、MCP streamable HTTP 与文档/skill 端点（`/api.md`、`/skills.md`）共用。 |
+| `--port` | `18765` | HTTP 端口。Web UI、MCP SSE、MCP streamable HTTP 与文档/skill 端点（`/api.md`、`/SKILL.md`）共用。 |
 | `--data-dir` | `~/.termcp` | 持久化目录（会话、SSH 配置、转录）。自动创建。可用 `$TERMCP_DATA_DIR` 覆盖。 |
 | `--log-level` | `info` | 日志级别：`debug` / `info` / `warn` / `error`。`debug` 打印所有 MCP 工具调用；失败的工具调用与会话创建错误无论级别都记在 `warn`/`error`。 |
 | `--no-internal` | `false` | 禁用内置的 loopback SSH profile。 |

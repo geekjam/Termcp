@@ -10,17 +10,16 @@ import (
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
 
-// AppendLog appends raw bytes to a shell's log.bin and returns the offset the
+// AppendLog appends raw bytes to a shell's output stream and returns the offset the
 // data was written at.
 //
-// The returned offset is the file position, which is what makes an offset
-// meaningful without any bookkeeping: it is a fact about the file, not a sum of
-// lengths that can drift out of agreement with the bytes.
+// The returned offset counts plaintext output bytes only. Encryption headers,
+// status/resize events and authentication tags never advance this coordinate.
 //
 // stream says which low-level producer the bytes came from (StdioOut or
 // StdioErr): the sink uses it to maintain the stream-switch index, recording
 // only when the producing stream changes. The bytes themselves all live in the
-// one log.bin regardless of stream.
+// one logical output stream regardless of source.
 //
 // The append happens through a cached handle so a burst of small writes does not
 // pay an open() per write. Callers must AppendMark *after* this returns so a
@@ -36,6 +35,9 @@ func (s *Store) AppendLog(sessionID, shellID string, data []byte, stream StdioSt
 	if len(data) == 0 {
 		return s.LogSize(sessionID, shellID)
 	}
+	if s.enc != nil {
+		return s.enc.append(sessionID, shellID, data, stream)
+	}
 	return s.logSink.append(sessionID, shellID, data, stream)
 }
 
@@ -50,6 +52,15 @@ func (s *Store) AppendMark(sessionID, shellID string, mark api.LogMark) error {
 	}
 	if err := validateID(shellID); err != nil {
 		return err
+	}
+	if s.enc != nil {
+		return s.enc.withLog(sessionID, shellID, true, func(h *encryptedHandle) error {
+			if err := h.log.RecordMark(mark); err != nil {
+				return err
+			}
+			h.dirty++
+			return nil
+		})
 	}
 	dir := s.shellDir(sessionID, shellID)
 	if err := s.initLogDir(sessionID, shellID); err != nil {
@@ -75,6 +86,15 @@ func (s *Store) AppendMark(sessionID, shellID string, mark api.LogMark) error {
 // LogSize returns the current size of a shell's log.bin, i.e. the offset just
 // past the last byte ever written.
 func (s *Store) LogSize(sessionID, shellID string) (int64, error) {
+	if s.enc != nil {
+		var size int64
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			var err error
+			size, err = h.log.Size()
+			return err
+		})
+		return size, err
+	}
 	st, err := os.Stat(s.LogPath(sessionID, shellID))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -151,6 +171,15 @@ func DecodeStdioRecord(v int64) (offset int64, stream StdioStream, ok bool) {
 
 // ReadStdioRecords returns a shell's raw switch records in file order.
 func (s *Store) ReadStdioRecords(sessionID, shellID string) ([]int64, error) {
+	if s.enc != nil {
+		var records []int64
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			var err error
+			records, err = h.log.ReadStdioRecords()
+			return err
+		})
+		return records, err
+	}
 	if err := validateID(sessionID); err != nil {
 		return nil, err
 	}
@@ -221,6 +250,15 @@ func (s *Store) LineIndexPath(sessionID, shellID string) string {
 // in whole records. A torn tail record (a crash mid-append) is not a line and is
 // not counted; the next append through the sink truncates it away.
 func (s *Store) LineRecordCount(sessionID, shellID string) (int64, error) {
+	if s.enc != nil {
+		var count int64
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			var err error
+			count, err = h.log.LineRecordCount()
+			return err
+		})
+		return count, err
+	}
 	if err := validateID(sessionID); err != nil {
 		return 0, err
 	}
@@ -240,6 +278,15 @@ func (s *Store) LineRecordCount(sessionID, shellID string) (int64, error) {
 // ReadLineRecords returns count records starting at record first (0-based). A
 // range past the end returns fewer records, like a short file read.
 func (s *Store) ReadLineRecords(sessionID, shellID string, first int64, count int) ([]int64, error) {
+	if s.enc != nil {
+		var records []int64
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			var err error
+			records, err = h.log.ReadLineRecords(first, count)
+			return err
+		})
+		return records, err
+	}
 	if err := validateID(sessionID); err != nil {
 		return nil, err
 	}
@@ -288,6 +335,11 @@ func (s *Store) SyncLineIndex(sessionID, shellID string) error {
 	if err := validateID(shellID); err != nil {
 		return err
 	}
+	if s.enc != nil {
+		return s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			return s.enc.syncHandle(logKey(sessionID, shellID), h)
+		})
+	}
 	return s.logSink.do(sinkRequest{op: opSyncLines, session: sessionID, shell: shellID}).err
 }
 
@@ -301,6 +353,19 @@ func (s *Store) ReadLog(sessionID, shellID string, offset int64, max int) ([]byt
 	}
 	if max <= 0 {
 		return nil, nil
+	}
+	if s.enc != nil {
+		var data []byte
+		err := s.enc.withLog(sessionID, shellID, false, func(h *encryptedHandle) error {
+			data = make([]byte, max)
+			n, err := h.log.ReadAt(data, offset)
+			data = data[:n]
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		})
+		return data, err
 	}
 	f, err := os.Open(s.LogPath(sessionID, shellID))
 	if err != nil {

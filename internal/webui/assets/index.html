@@ -18,6 +18,12 @@
   <header class="app-header">
     <h1>termcp<span class="app-version" id="app-version" title="termcp -version"></span></h1>
     <nav class="app-header-nav" aria-label="Docs" data-i18n-aria="nav.docs">
+      <a href="storage.html" class="api-nav-link" title="Encrypted storage: manage the master password and startup unlock method" data-i18n-title="storage.nav.title" aria-label="Encrypted storage" data-i18n-aria="storage.title">
+        <svg class="api-nav-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="7" width="10" height="7" rx="1.5"/>
+          <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>
+        </svg>
+      </a>
       <!-- Trigger + menu. The trigger is shaped like the API link beside it
            (same border, radius and blue label) and shows the language in use;
            the menu below it marks that same choice. -->
@@ -70,6 +76,7 @@
          to read. -->
     <div id="conn-load-banner" class="conn-load-banner" role="status"></div>
     <div id="session-load-banner" class="conn-load-banner" role="status" style="display:none"></div>
+    <div id="storage-cleanup-banner" class="conn-load-banner" role="status" style="display:none"></div>
     <!-- The host drawer: closed by default, fixed when open, and out of the flow
          entirely (display: contents on its wrapper), so it is a sibling of the
          layout frame rather than a child of it — a fixed element inside a
@@ -393,11 +400,28 @@
       </div>
       <div class="modal-body">
         <p id="conn-import-err" class="err" style="display:none"></p>
-        <div class="conn-field"><label for="conn-import-file" data-i18n="conn.batch.file">TOML file</label><input type="file" id="conn-import-file" accept=".toml,application/toml,text/plain"></div>
+        <div class="conn-field"><label for="conn-import-file" data-i18n="conn.batch.file">TOML or encrypted configuration file</label><input type="file" id="conn-import-file" accept=".toml,.enc,application/toml,application/octet-stream,text/plain"></div>
+        <div class="conn-field"><label for="conn-import-password" data-i18n="conn.batch.importPassword">File password (leave blank for plaintext)</label><input type="password" id="conn-import-password" autocomplete="off" maxlength="4096"></div>
         <div class="conn-field conn-field-check"><label class="conn-check" for="conn-import-temporary"><input type="checkbox" id="conn-import-temporary"><span data-i18n="conn.temporary">Temporary host</span></label><div class="conn-check-hint" data-i18n="conn.batch.temporaryHint">Applies to every host in this file. Temporary hosts disappear when termcp stops.</div></div>
         <p class="conn-check-hint" data-i18n="conn.batch.collisionHint">Conflicting host names are renamed automatically. Invalid files import no hosts.</p>
         <p id="conn-import-result" role="status" class="form-ok" style="display:none"></p>
         <div class="modal-actions"><button type="button" class="btn btn-primary" id="conn-import-run" data-i18n="conn.batch.import">Import Config</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-conn-export" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-h">
+        <h2 data-i18n="conn.batch.export">Export Config</h2>
+        <button type="button" class="btn" id="conn-export-close" data-i18n="common.close">Close</button>
+      </div>
+      <div class="modal-body">
+        <p class="conn-check-hint" data-i18n="conn.batch.protectionHint">Set an independent file password to encrypt this export. Leave both fields blank for plaintext, which contains credentials.</p>
+        <p id="conn-export-err" class="err" role="alert" style="display:none"></p>
+        <div class="conn-field"><label for="conn-export-password" data-i18n="conn.batch.exportPassword">Export password (optional)</label><input type="password" id="conn-export-password" autocomplete="new-password" maxlength="4096"></div>
+        <div class="conn-field"><label for="conn-export-confirm" data-i18n="conn.batch.confirmPassword">Confirm export password</label><input type="password" id="conn-export-confirm" autocomplete="new-password" maxlength="4096"></div>
+        <div class="modal-actions"><button type="button" class="btn btn-primary" id="conn-export-run" data-i18n="conn.batch.export">Export Config</button></div>
       </div>
     </div>
   </div>
@@ -537,6 +561,7 @@
   <script src="static/xterm/xterm.js"></script>
   <script src="static/js/i18n-catalog.js"></script>
   <script src="static/js/i18n.js"></script>
+  <script src="static/js/storage-notice.js"></script>
   <script src="static/js/theme.js"></script>
   <!-- The batch bar both columns wear (see batch-bar.js): it must be defined
        before the panels that build one, so it loads ahead of dialogs.js. -->

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,20 +18,12 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/open-mcp-ai/termcp/internal/approval"
 	"github.com/open-mcp-ai/termcp/internal/auth"
 	"github.com/open-mcp-ai/termcp/internal/config"
 	"github.com/open-mcp-ai/termcp/internal/daemon"
-	"github.com/open-mcp-ai/termcp/internal/extensions"
-	"github.com/open-mcp-ai/termcp/internal/forward"
+	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
 	"github.com/open-mcp-ai/termcp/internal/logansi"
-	mcpmod "github.com/open-mcp-ai/termcp/internal/mcp"
-	"github.com/open-mcp-ai/termcp/internal/mcpbridge"
-	"github.com/open-mcp-ai/termcp/internal/message"
-	"github.com/open-mcp-ai/termcp/internal/session"
-	"github.com/open-mcp-ai/termcp/internal/sshconfig"
-	"github.com/open-mcp-ai/termcp/internal/sshserver"
-	"github.com/open-mcp-ai/termcp/internal/storage"
+	"github.com/open-mcp-ai/termcp/internal/securestore"
 	"github.com/open-mcp-ai/termcp/internal/webui"
 )
 
@@ -95,7 +86,7 @@ func main() {
 	cfg := config.Default()
 	flag.StringVar(&cfg.Host, "host", cfg.Host, "HTTP bind address (127.0.0.1 = loopback default; 0.0.0.0 = all interfaces)")
 	flag.IntVar(&cfg.Port, "port", cfg.Port, "HTTP server port")
-	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory for JSON storage (default: $TERMCP_DATA_DIR or ~/.termcp)")
+	flag.StringVar(&cfg.DataDir, "data-dir", cfg.DataDir, "Data directory for encrypted storage (default: $TERMCP_DATA_DIR or ~/.termcp)")
 	flag.StringVar(&cfg.AssetsDir, "assets", cfg.AssetsDir, "External static assets directory: files there override the embedded Web UI and docs; missing files fall back to the embed (default: $TERMCP_ASSETS_DIR or ~/.termcp/assets)")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Log verbosity: debug|info|warn|error")
 	flag.BoolVar(&cfg.NoInternal, "no-internal", cfg.NoInternal, "Disable the built-in loopback SSH profile (no internal connection)")
@@ -112,7 +103,7 @@ func main() {
 	var idleTimeoutArg string
 	flag.StringVar(&idleTimeoutArg, "idle-timeout", "", "How long a daemon instance may stay fully idle before it exits on its own (e.g. 10m; 0 disables). Defaults: 30s for termcp daemon stdio, none for termcp daemon start. Only meaningful when a daemon instance is launched.")
 	var bridgeNamespace string
-	flag.StringVar(&bridgeNamespace, "namespace", "", "stdio bridge: claim a caller namespace (letters/digits/-_. up to 64). The instance then lists and accepts only sessions in it, so several agents bridging to the same instance do not collide. Empty = the instance owner's view, which is the default.")
+	flag.StringVar(&bridgeNamespace, "namespace", "", "stdio bridge: claim a caller namespace (letters/digits/-_. up to 64). Empty = the instance owner's view.")
 	flag.Usage = usage
 	// The subcommand leads the command line and is picked off before flag
 	// parsing, which stops at the first positional argument.
@@ -304,221 +295,93 @@ func main() {
 func runServer(cfg *config.Config, idleTimeoutArg string, idleTimeout time.Duration, isDaemonChild bool) {
 	var verifier *auth.Verifier
 	if cfg.AuthToken != "" || cfg.AuthHash != "" {
-		v, err := auth.NewVerifier(cfg.AuthToken, cfg.AuthHash)
+		value, err := auth.NewVerifier(cfg.AuthToken, cfg.AuthHash)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid auth config: %v\n", err)
+			fmt.Fprintln(os.Stderr, "invalid HTTP authentication configuration")
 			os.Exit(2)
 		}
-		verifier = v
+		verifier = value
 	}
-
-	slog.SetDefault(slog.New(buildLogHandler(cfg)))
-	slog.Info("termcp server started", "version", versionString())
-
-	// Start internal SSH server (in-process, no TCP port) unless disabled.
-	var sshSrv *sshserver.Server
-	if !cfg.NoInternal {
-		sshSrv = sshserver.New()
-		// The in-process MCP bridge is a command the internal server serves
-		// itself: an extension template reaches an HTTP MCP server over its own
-		// channel with no second binary and no PATH lookup (see
-		// internal/mcpbridge.RegisterBuiltin).
-		mcpbridge.RegisterBuiltin(sshSrv)
-		if err := sshSrv.Start(); err != nil {
-			slog.Error("failed to start SSH server", "err", err)
-			os.Exit(1)
-		}
-	}
-	slog.Info("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
-
-	if verifier != nil {
-		slog.Info("HTTP authentication: enabled (API/MCP: Authorization: Bearer <token>; browsers: native login prompt, token as password)")
-	} else if cfg.DisableAuth {
-		slog.Warn("HTTP authentication: DISABLED on purpose (--disable-auth / $" + config.EnvDisableAuth + "); anyone who can reach this port can drive every session")
-	} else {
-		slog.Info("HTTP authentication: disabled (loopback-only bind)")
-	}
-
-	slog.Info("MCP HTTP:")
-	slog.Info("    /sse SSE transport")
-	slog.Info("    /stream (streamable HTTP per MCP spec, e.g. Open WebUI)")
-	slog.Info("- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ")
-
-	// Initialize storage and managers
-	store := storage.New(cfg.DataDir)
-	msgMgr := message.NewManager(store)
-	sessMgr := session.NewManager(msgMgr, store, sshSrv)
-	if err := sessMgr.RestoreDead(); err != nil {
-		slog.Warn("failed to restore previous DEAD sessions", "err", err)
-	}
-
-	sshStore := sshconfig.NewStore(cfg.DataDir)
-
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	mux := http.NewServeMux()
-	mainSrv := &http.Server{Addr: addr, Handler: mux}
-
-	forwardMgr := forward.NewForwardManager()
-
-	// The extension reconciler keeps every enabled extension's session warm and
-	// reports its state. It owns its loop's context — Stop cancels it — and the
-	// shutdown path stops it before the sessions are marked dead, so an in-flight
-	// probe cannot spawn a connection the process is about to leave.
-	extReconciler := extensions.NewReconciler(
-		extensions.NewStore(cfg.DataDir), sessMgr, msgMgr, sshStore, forwardMgr,
-	)
-	extReconciler.NoInternal = cfg.NoInternal
-	if err := extReconciler.Start(context.Background()); err != nil {
-		slog.Error("failed to start extension reconciler", "err", err)
-		os.Exit(1)
-	}
-
-	mcpOpts := []mcpmod.Option{mcpmod.WithHTTPServer(mainSrv)}
-	// defer_loading level: the graded flag wins; the legacy bool maps to the
-	// partial level. Off by default because clients that drop the marker (any
-	// Codex talking through a gateway, for instance) would lose deferred tools
-	// entirely rather than merely load them later.
-	deferLevel := cfg.MCPDeferToolsLevel
-	if deferLevel == "" && cfg.MCPDeferTools {
-		deferLevel = mcpmod.DeferPartial
-	}
-	switch deferLevel {
-	case "", mcpmod.DeferOff, mcpmod.DeferPartial, mcpmod.DeferAll:
+	level := cfg.MCPDeferToolsLevel
+	switch level {
+	case "", "off", "partial", "all":
 	default:
-		slog.Error("invalid --mcp-defer-tools-level", "level", deferLevel, "valid", "off|partial|all")
+		fmt.Fprintln(os.Stderr, "invalid --mcp-defer-tools-level: expected off, partial or all")
 		os.Exit(2)
 	}
-	if deferLevel != "" && deferLevel != mcpmod.DeferOff {
-		mcpOpts = append(mcpOpts, mcpmod.DeferLevel(deferLevel))
-	}
-	mcpSrv := mcpmod.New(sessMgr, msgMgr, sshStore, forwardMgr, versionString(), mcpOpts...)
-	// Same embedded docs the Web UI serves over HTTP become MCP resources/prompts.
-	mcpSrv.SetDocsFS(webui.Assets())
-	mcpSrv.NoInternal = cfg.NoInternal
-	if cfg.MCPManageSSHConfigs {
-		mcpSrv.RegisterSSHConfigWriteTools()
-	}
-	mux.Handle("GET /sse", mcpSrv.SSEHandler())
-	mux.Handle("POST /message", mcpSrv.MessageHandler())
-	mux.Handle("/stream", mcpSrv.StreamableHTTPHandler())
-	webuiH := &webui.Handler{Sessions: sessMgr, MsgMgr: msgMgr, SSH: sshStore, ForwardMgr: forwardMgr, NotifyMgr: mcpSrv.NotifyManager(), Extensions: extReconciler, NoInternal: cfg.NoInternal, Version: versionString(), Daemon: isDaemonChild, StartedAt: time.Now().UTC().Format(time.RFC3339)}
-	// The effective countdown is published at GET /api/daemon so the stdio
-	// bridge can ping faster than it (see daemon.InstanceInfo.IdleTimeoutMS).
+	slog.SetDefault(slog.New(buildLogHandler(cfg)))
+	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	server := &http.Server{Addr: address, ReadHeaderTimeout: 10 * time.Second}
+	management := &webui.Handler{Version: versionString(), Daemon: isDaemonChild, StartedAt: time.Now().UTC().Format(time.RFC3339)}
 	if isDaemonChild {
-		webuiH.DaemonLog = daemon.LogPath(cfg.DataDir)
-		webuiH.IdleTimeout = daemon.DefaultIdleTimeout
+		management.DaemonLog = daemon.LogPath(cfg.DataDir)
+		management.IdleTimeout = daemon.DefaultIdleTimeout
 		if idleTimeoutArg != "" {
-			webuiH.IdleTimeout = idleTimeout
+			management.IdleTimeout = idleTimeout
 		}
 	}
-	// File transfers and port forwards are held by the same review queue as
-	// command lines, but the operations live with the MCP server (it owns the
-	// SFTP and forward machinery). The Web UI decides; this is how its decision
-	// gets replayed where the operation is implemented.
-	webuiH.ExecuteOperation = mcpSrv.ExecuteApprovedOperation
-	webuiH.Register(mux)
-	// Bridge the MCP notify_user tool to the browser UI (toast/highlight push).
-	mcpSrv.SetExtensionReconciler(extReconciler)
-	mcpSrv.SetUINotifier(webuiH.BroadcastUINotify)
-	// Who is attached: the Web UI lists MCP clients from the MCP server and its
-	// own tabs from its own registry. The listener wakes the same broadcast the
-	// session list uses, so a client connecting shows up without a poll.
-	webuiH.MCPConnections = func() []any {
-		conns := mcpSrv.Connections()
-		out := make([]any, len(conns))
-		for i, c := range conns {
-			out[i] = c
-		}
-		return out
+	var controller *securestore.Controller
+	var shutdownOnce sync.Once
+	var shuttingDown atomic.Bool
+	shutdown := func(reason string) {
+		shutdownOnce.Do(func() {
+			shuttingDown.Store(true)
+			slog.Info("shutting down", "reason", reason)
+			_ = server.Close()
+			if controller != nil {
+				if err := controller.Close(); err != nil {
+					slog.Error("storage shutdown did not complete cleanly")
+				}
+			}
+		})
 	}
-	mcpSrv.SetConnectionsListener(webuiH.NotifyClientsChanged)
-
-	// An approval decision must also wake an agent parked on shell_notify, so it
-	// learns the outcome without polling. Fan-out stays in one place: the web UI
-	// keeps its own listener (installed in Register) and this one forwards the
-	// same transitions to the notify subsystem's rules.
-	sessMgr.AddApprovalListener(func(sessionID string, req approval.Request) {
-		if req.ShellID != "" {
-			mcpSrv.NotifyManager().OnApprovalChange(req.ShellID, "approval "+string(req.State))
-		}
+	management.StopDaemon = func() { shutdown("daemon stop") }
+	var err error
+	controller, err = securestore.Open(cfg.DataDir, func(keys *encryptedfs.KeyManager) (http.Handler, io.Closer, error) {
+		return buildApplication(cfg, keys, server, management)
 	})
-	if verifier != nil {
-		mainSrv.Handler = auth.Middleware(verifier, mux)
+	if err != nil {
+		slog.Error("cannot acquire or open encrypted storage; check instance ownership, key files and permissions")
+		os.Exit(1)
 	}
-
+	defer controller.Close()
+	server.Handler = webui.StorageGateway(controller, management)
+	if verifier != nil {
+		server.Handler = auth.Middleware(verifier, server.Handler)
+	}
+	slog.Info("termcp server started", "version", versionString())
 	host := strings.TrimSpace(cfg.Host)
-	base := fmt.Sprintf("http://%s:%d", host, cfg.Port)
+	base := daemon.BaseURL(host, cfg.Port)
 	var lan []string
 	if bindHostIsAll(host) {
 		lan = nonLoopbackUnicastIPv4s()
 	}
 	logHTTPMain(base, cfg.Port, lan)
-
-	var shuttingDown atomic.Bool
-	var shutdownOnce sync.Once
-
-	// gracefulShutdown is the one exit path for both a signal and a daemon's
-	// idle countdown; once it has run, a second trigger is a no-op.
-	gracefulShutdown := func(reason string) {
-		shutdownOnce.Do(func() {
-			shuttingDown.Store(true)
-			slog.Info("shutting down", "reason", reason)
-			extReconciler.Stop()
-			// Disconnect ≠ delete: DEAD all running sessions (retain history) instead
-			// of killing/clearing every shell.
-			sessMgr.MarkAllDead()
-			if sshSrv != nil {
-				sshSrv.Stop()
-			}
-			mcpSrv.Stop()
-			// The store keeps a shell's log open for appending; close it so the last
-			// bytes are durable and no handle outlives the process.
-			if err := store.Close(); err != nil {
-				slog.Warn("closing output logs", "err", err)
-			}
-		})
+	if verifier != nil {
+		slog.Info("HTTP authentication enabled")
+	} else if cfg.DisableAuth {
+		slog.Warn("HTTP authentication disabled by explicit configuration")
 	}
-
-	// The daemon stop endpoint asks for the same exit path a signal takes.
-	webuiH.StopDaemon = func() { gracefulShutdown("daemon stop") }
-
-	// Handle graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	signalDone := make(chan struct{})
+	defer close(signalDone)
 	go func() {
-		<-sigCh
-		gracefulShutdown("signal")
+		select {
+		case <-signals:
+			shutdown("signal")
+		case <-signalDone:
+		}
 	}()
-
-	// Daemon children carry the idle countdown that is their normal way of
-	// ending. The watcher starts counting at creation — a fresh instance has
-	// seen no activity yet — and management probes are exempt, so a status
-	// query never keeps alive the instance it is asking about. The predicate
-	// lives with the probe itself (daemon.IsProbe): the probe falls back to the
-	// public /api.md fingerprint when /api/daemon is rejected, and that
-	// fallback must be exempt too, or a status query on a guarded instance
-	// would feed the very countdown it reports on.
-	if isDaemonChild {
-		timeout := daemon.DefaultIdleTimeout
-		if idleTimeoutArg != "" {
-			timeout = idleTimeout
-		}
-		watcher := daemon.NewIdleWatcher(timeout, func() { gracefulShutdown("idle timeout") })
-		watcher.Exempt = daemon.IsProbe
-		mainSrv.Handler = watcher.Track(mainSrv.Handler)
-		slog.Info("daemon instance active", "pid", os.Getpid(), "idle_timeout", timeout)
+	err = server.ListenAndServe()
+	if shuttingDown.Load() && errors.Is(err, http.ErrServerClosed) {
+		slog.Info("server stopped")
+		return
 	}
-
-	serveErr := make(chan error, 1)
-	go func() { serveErr <- mcpSrv.Start(addr) }()
-
-	if err := <-serveErr; err != nil {
-		if shuttingDown.Load() && errors.Is(err, http.ErrServerClosed) {
-			slog.Info("server stopped")
-			return
-		}
-		slog.Error("failed to start MCP server", "err", err)
-		os.Exit(1)
+	shutdown("listener stopped")
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		slog.Error("HTTP listener failed")
 	}
 }
 
@@ -535,5 +398,5 @@ func buildLogHandler(cfg *config.Config) slog.Handler {
 		minLevel = slog.LevelInfo
 	}
 	color := term.IsTerminal(int(os.Stderr.Fd()))
-	return logansi.NewTextHandler(os.Stderr, logansi.Options{MinLevel: minLevel, Color: color})
+	return diagnosticHandler{next: logansi.NewTextHandler(os.Stderr, logansi.Options{MinLevel: minLevel, Color: color})}
 }

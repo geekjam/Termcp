@@ -13,14 +13,14 @@ Termcp 通过 **SSE**、**Streamable HTTP** 与 **stdio 桥**三种方式暴露�
 - SSE：`http://<host>:18765/sse`（Claude：`--transport sse` / `type: "sse"`）
 - Streamable HTTP：`http://<host>:18765/stream`（Claude：`--transport http` / `type: "http"`）
 
-可复制配置与 HTTP API 速查：Web UI **`/api.html`**。完整客户端样例见 `README.md` / `README.zh.md`。同一批会话也可用实例自带的 Agent Skill 驱动（`/skills.md` 安装一次，配 `GET /api/resolve` 解析 `termcp://` 定位符，纯 curl）。
+可复制配置与 HTTP API 速查：Web UI **`/api.html`**。完整客户端样例见 `README.md` / `README.zh.md`。同一批会话也可用实例自带的 Agent Skill 驱动（`/SKILL.md` 安装一次，配 `GET /api/resolve` 解析 `termcp://` 定位符，纯 curl）。
 
 ## Resources & Prompts
 
 Besides tools, the server publishes its own HTTP API reference and curl skill as
 MCP resources, and a `learn-api` prompt:
 
-- Resources: `<origin>/api.md` (REST reference) and `<origin>/skills.md` (curl skill).
+- Resources: `<origin>/api.md` (REST reference) and `<origin>/SKILL.md` (curl skill).
   URIs are the instance's real HTTP addresses, so the same string works for `curl`.
   (Tool arguments/results are described by the `tools/list` schemas themselves, so no
   separate tool reference document is served.)
@@ -30,7 +30,7 @@ MCP resources, and a `learn-api` prompt:
   *Agent-facing documents (HTTP + MCP resources)*; this file does not repeat it. The
   resource URIs and the `learn-api` prompt follow the same per-request origin.
 - Prompt: `learn-api` (optional argument `task`) — primes an agent with `/api.md`
-  and `/skills.md` before it scripts against Termcp over REST.
+  and `/SKILL.md` before it scripts against Termcp over REST.
 
 两个文档端点在开启鉴权后仍可**无凭据**获取（仅 GET/HEAD，纯静态、无数据）；其余所有面（REST/MCP/WS/Web UI）依旧要求 token。
 
@@ -74,7 +74,7 @@ Termcp 的 31 个工具按"热路径 / 低频面"分成两类。MCP 标准的 `d
 
 分类由 `internal/mcp/toolopts.go` 的 `deferredTools` 表与 `allLevelCore` 表定义，开关由 `Server.shouldDeferTool` 按级别决定（`mcp.DeferLevel(level)` option）；`TestDeferLoadingPolicy` 会分别校验三种级别，并拦住"新工具未分类"与"僵尸条目"。若要调整分类，改表即可，无需改各处注册代码。
 
-另见：完整的工具参考本来就以 MCP resource 形式随实例提供（`resources/list` 里的 `api.md` / `skills.md`），instructions 的规则 0 已指向它——这正是 #95 "提示放资源展开"的落点：`tools/list` 只带紧凑描述，深度文档按需取。
+另见：完整的工具参考本来就以 MCP resource 形式随实例提供（`resources/list` 里的 `api.md` / `SKILL.md`），instructions 的规则 0 已指向它——这正是 #95 "提示放资源展开"的落点：`tools/list` 只带紧凑描述，深度文档按需取。
 
 **ID 规则（硬）：**
 
@@ -302,7 +302,7 @@ ssh_config(action=list)
 1. **流式游标（默认，活会话）**：返回 reader 上次读取后的新输出，游标前移、不重复。`shell_input → shell_key(enter) → shell_output` 是驱动一条命令的完整循环（上一步的类型、回车、读取只是工具语义，不是回合边界）——应在同一轮内批处理：一个 `mcpScript` 里打字、回车、然后轮询到匹配或到期再返回。每次微步骤（打字/回车/读取各占一个模型回合）会让每个微步骤多付出 ~6–9s 的回合开销，而单次工具调用只要 2–10ms。
 2. **`offset >= 0`（无状态绝对定位）**：读字节区间 `[offset, offset+max_bytes)`。任意时刻从头/任意位置翻页；每次调用显式传 `offset`（用返回的 `end_offset` 续读），服务器不保存状态，活会话与已关闭会话一视同仁。
 3. **`tail_lines > 0`（末尾截取）**：反向取流末尾最后 N 行——只读最近输出，绝不拖入整段历史（token 友好）。无 `offset`/`tail_lines` 且目标是已关闭/死亡会话时，默认也取末尾最近一块（≤8 KiB），不会全量导出。
-4. **`from_line > 0`（按行号读取）**：从持久化日志的第 N 行读起（配合 `max_lines`/`max_bytes`）。行号建在 `log.lines` 索引上：**1-based、绝对、永不平移**（`log.bin` 只追加不淘汰），活会话与已关闭会话同一套行号，第 N 行永远是同样的字节；末尾未满一行（无 `\n` 收尾）不占行号。适合 JSONL 等行协议消费方按行拉增量（配合 `shell_notify` 唤醒后 `from_line=上次读到+1`）。
+4. **`from_line > 0`（按行号读取）**：从持久化日志的第 N 行读起（配合 `max_lines`/`max_bytes`）。行号建在明文输出字节的换行索引上：**1-based、绝对、永不平移**（输出只追加不淘汰），活会话与已关闭会话同一套行号，第 N 行永远是同样的字节；末尾未满一行（无 `\n` 收尾）不占行号。适合 JSONL 等行协议消费方按行拉增量（配合 `shell_notify` 唤醒后 `from_line=上次读到+1`）。
 
 **返回**：`{ output, has_more, lines_returned, bytes_returned, returned_bytes, raw_bytes, start_offset, end_offset, total_bytes, partial_tail_bytes, source, session_id, shell_id, session_status, session_uptime_seconds? }`；`from_line` 读取额外返回 `{ from_line, to_line, total_lines, line_bytes }`。
 
@@ -464,8 +464,8 @@ ssh_config(action=list)
 
 ### message（会话输出区段索引）
 
-查看一个 shell 字节日志（`log.bin`）的区段索引：每段从哪里开始、什么时候开始、由什么产生。
-**区段只描述位置，不携带内容** —— 字节全部在 `log.bin` 里，用 `shell_output` 按 offset 读取。
+查看一个 shell 的逻辑输出字节流的区段索引：每段从哪里开始、什么时候开始、由什么产生。
+**区段只描述位置，不携带内容** —— 原始输出字节来自认证解密后的事件流，用 `shell_output` 按 offset 读取。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -475,13 +475,13 @@ ssh_config(action=list)
 
 - `action="list"`：返回 `{ "spans": [{ status, time, start, end, from_line, to_line }], "total_bytes": N, "total_lines": N, "session_id": "..." }`
 - `status` = **这段字节是谁产生的**（业务语义：谁在操作；不含 stdout/stderr 之分——`o` 同时覆盖两者，流的归属用 `shell_output(stream=)` 读），共 5 个取值：`"o"` 输出（shell 自己打印的）、`"a"` AI 输入（MCP）、`"i"` 终端输入（人，经 Web UI）、`"q"` 此处请求了一次审批、`"A"` 审批通过并写入。**Agent 与人的敲键回显完全一样**，字节日志里分不出人是否操作过；`i` / `q` 区段就是「人碰过这个终端」的证据（`q` 后面不一定有字节：审批被拒/超时就不产生任何输入）。
-- `start`/`end`：该区段在 `log.bin` 中的字节区间；取内容用 `shell_output(shell_id, offset=start, max_bytes=end-start)`
+- `start`/`end`：该区段在明文输出流中的字节区间；取内容用 `shell_output(shell_id, offset=start, max_bytes=end-start)`
 - `from_line`/`to_line`：该区段覆盖的**行号**（绝对、1-based，与 `shell_output(from_line=...)` 同一套编号）。区段在行中间结束时 `to_line < from_line`（未完成任何完整行）；零长度标记（输入）报告它所在的行；落在末尾半行/流起始/越过末尾的位置报告 0。
 - 输入是**零长度标记**（`start == end`）：按键已由终端回显进输出流，不重复写入；且标记的是**提交那一行**（按 enter / ctrl+c / ctrl+d / ctrl+z）的时刻，不是开始打字的时刻
 
 ### session_delete（彻底删除会话）
 
-**永久删除**一个会话：关闭仍存活的进程/传输，释放全部子资源（shell 通道、端口转发、通知规则、内存缓冲），从注册表移除（Web UI 上的 tile 随之消失），并删除磁盘上的会话目录（manifest + `log.bin` + `log.jsonl`）。**不可逆**。
+**永久删除**一个会话：关闭仍存活的进程/传输，释放全部子资源（shell 通道、端口转发、通知规则、内存缓冲），从注册表移除（Web UI 上的 tile 随之消失），并删除磁盘上的会话目录（加密元数据、事件日志和索引）。**不可逆**。
 
 `session_id` 可用**逗号分隔多个** id/定位符（批量）：逐条独立删除，单条失败不中断其余，返回逐条 `results` 数组。
 
@@ -568,7 +568,7 @@ password = "placeholder2"
 # [connections.jump.jump]         # 更深一跳
 ```
 
-可选字段：`port` / `key_passphrase` / `trust_unknown_host` / `known_hosts` / `dial_timeout_seconds` / `proxy` / `description` / `default_shell` / `default_mode` / `default_approval`。导出（`GET /api/connections/batch`）产生的是同一形状，导出的文件可直接导回；`internal` 是保留名，已存在的名字导入时变为 `name-2` 而不是被覆写。
+可选字段：`port` / `key_passphrase` / `trust_unknown_host` / `known_hosts` / `dial_timeout_seconds` / `proxy` / `description` / `default_shell` / `default_mode` / `default_approval`。导出（`GET /api/connections/batch`）产生的是同一形状，导出的文件可直接导回；只导出持久主机，临时主机即使被明确点名也不会导出。`internal` 是保留名，已存在的名字导入时变为 `name-2` 而不是被覆写。
 
 ---
 

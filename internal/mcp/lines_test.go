@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -269,33 +268,7 @@ func TestParseReadParams_FromLineConflicts(t *testing.T) {
 // TestFromLine_LiveSession reads lines from a live internal pipe shell: the
 // numbering must match the log the shell is still writing.
 func TestFromLine_LiveSession(t *testing.T) {
-	s, _, _, _ := newTestServerWithHistory(t)
-
-	var command string
-	var args []any
-	if runtime.GOOS == "windows" {
-		command = "powershell.exe"
-		args = testShellArgs("-NoLogo", "-NoProfile", "-Command",
-			"1..20 | ForEach-Object { Write-Output (\"LINE_{0:D2}\" -f $_) }")
-	} else {
-		command = "/bin/sh"
-		args = testShellArgs("-c", "i=1; while [ $i -le 20 ]; do echo LINE_$(printf '%02d' $i); i=$((i+1)); done")
-	}
-	startRes, err := s.handleStartSession(context.Background(), makeRequest(map[string]any{
-		"command":    command,
-		"args":       args,
-		"mode":       "pipe",
-		"ssh_config": "internal",
-	}))
-	if err != nil || startRes.IsError {
-		t.Fatalf("start session failed: %v", err)
-	}
-	mStart := parseResult(t, startRes)
-	sessID := mStart["session_id"].(string)
-	shellID := mStart["shell_id"].(string)
-	t.Cleanup(func() {
-		_, _ = s.handleTerminateSession(context.Background(), makeRequest(map[string]any{"session_id": sessID, "force": true}))
-	})
+	s, _, shellID := startPipeStdioSession(t, "lines")
 
 	// Wait until the stream holds all 20 lines, then read the first two by number.
 	// Early polls legitimately fail (the log is empty until the process prints),

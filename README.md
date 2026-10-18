@@ -150,7 +150,7 @@ the secret in the browser, where it stays out of the model's context.
 | **Connected clients** | The header lists who is attached: MCP clients with the name they announced and their namespace, plus Web UI tabs with their address and what they are watching. |
 | **Update notice** | The header tells you when a newer release exists — only for real `vX.Y.Z` builds, never for a local `dev-<sha>`. |
 | **Discovery** | `shell_detect` finds the target's interactive shell instead of guessing from the local `PATH`. |
-| **Agent Skill** | Instances serve `/skills.md`, so an agent drives everything with plain `curl`. |
+| **Agent Skill** | Instances serve `/SKILL.md`, so an agent drives everything with plain `curl`. |
 
 ## Security Model
 

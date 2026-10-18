@@ -2,13 +2,15 @@ name: Test
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, encryption-test]
   pull_request:
     branches: [main, dev]
+  workflow_dispatch:
 
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -28,6 +30,9 @@ jobs:
           RELEASE_PR_TITLE: ${{ github.event.pull_request.title }}
         run: python scripts/release_metadata.py check
 
+      - name: Test Python helpers
+        run: python -m unittest discover -s scripts -p "test_*.py"
+
       # Self-check for the same script: pins the pre-release rule (an -rc.N tag
       # must not move server.json) that the version test in internal/mcp covers
       # from the other side.
@@ -44,7 +49,42 @@ jobs:
         # races that -race cannot see. See docs/agents/testing.md.
         run: go test ./... -count=1 -shuffle=on -race -timeout 240s
 
+      - name: Stress process startup and output checks
+        if: runner.os == 'Windows'
+        # PowerShell parses an unquoted comma list before invoking go.
+        run: go test ./internal/mcp ./internal/session ./internal/extensions -count=3 '-cpu=1,2,4' -shuffle=on -race -timeout 240s -run '^(TestHandleSendInput_ReturnsImmediately|TestSession_PtyResizeReachesChild|TestStreamFilter_PipeSeparatesStderrCrossOS|TestStreamFilter_LineAcrossTheBoundary|TestFromLine_LiveSession|TestWithLogging_TruncatesLongText|TestHistoryShellContinuationIsOnlyALineMark|TestPipeReadersKeepLogAndBufferOrder|TestReconcilerReportsStartupFailure|TestReconcilerDetachesExitedChannel|TestExtensionRetryBringsUp)$'
+
       - name: Test pure-API build
         run: |
           go build -tags no_webui ./...
           go test -tags no_webui -count=1 -race -run TestNoWebUIBuildCarriesDocsOnly ./internal/webui/
+
+  system-key-store:
+    name: Native key store (${{ matrix.os }})
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Install Secret Service test dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y dbus-x11 gnome-keyring libsecret-tools libglib2.0-bin
+
+      - name: Test real system key store
+        run: python scripts/test_native_key_store.py

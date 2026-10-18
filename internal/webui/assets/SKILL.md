@@ -1,6 +1,6 @@
 ---
 name: termcp
-description: Drive the termcp terminal-platform over its HTTP REST API with curl + jq (curl only). Use whenever a request mentions termcp, a termcp URL/locator (termcp://rock64, termcp://#<session>, termcp://#<session>:2), "open/connect to <host> through termcp", or termcp sessions/shells. Always fetch the instance's own <origin>/api.md first for version-exact endpoints, then use the recipes for resolving locators, creating sessions, polling output in chunks (live and closed sessions), sending input/keys, resizing PTYs, terminating or purging sessions, transferring files, and managing port forwards. For server sweeps, batch commands, CI, and agents that only have HTTP access.
+description: Drive Termcp sessions and shells over its HTTP REST API using curl and jq. Use when a user asks to open a termcp:// locator (termcp://rock64, termcp://#session, termcp://#session:2), connect to a configured SSH host through Termcp, or operate Termcp terminals, files, and forwards using HTTP. Fetch the running instance's api.md before making API calls.
 ---
 
 # Termcp over HTTP
@@ -8,16 +8,17 @@ description: Drive the termcp terminal-platform over its HTTP REST API with curl
 Termcp is a terminal-session platform: one HTTP port serves REST, WebSocket and
 MCP. This skill uses curl only.
 
-The documentation endpoints (`/api.md`, `/skills.md`) are public: they work with
+The documentation endpoints (`/api.md`, `/SKILL.md`) are public: they work with
 no token. **API calls themselves need the token** whenever the instance runs with
 authentication enabled (see section 2).
 
-> Served at `<origin>/skills.md`. Install it by saving it into your agent's
+> Served at `<origin>/SKILL.md`. Install it by saving it into your agent's
 > skills directory as `termcp/SKILL.md` (the folder name is what gets discovered):
 >
 > - **Claude Code**: `~/.claude/skills/termcp/SKILL.md`
-> - **Other agents** (shared Agent Skills convention): `~/.agents/skills/termcp/SKILL.md`
-> - **Project-scoped**: `<project>/.claude/skills/termcp/SKILL.md`
+> - **Codex / other agents** (shared Agent Skills convention): `~/.agents/skills/termcp/SKILL.md`
+> - **Project-scoped**: `<project>/.claude/skills/termcp/SKILL.md` (Claude Code),
+>   `<project>/.agents/skills/termcp/SKILL.md` (Codex / shared agents)
 >
 > Restart the agent session afterwards — skills load at session start. Claude Code
 > has no per-skill CLI command: install = write the file, remove = delete the folder.
@@ -148,7 +149,7 @@ END=$(jq -r .end <<<"$R"); TOTAL=$(jq -r .total <<<"$R")
 `d` is the raw byte window in a standard JSON string, not base64. Byte sequences
 that are not valid UTF-8 cannot survive a JSON string (Windows ConPTY already
 replaces them before Termcp sees them; a Linux `cat` of binary data may show
-U+FFFD) — `log.bin` itself is byte-exact.
+U+FFFD) — the decrypted output stream itself is byte-exact.
 
 After issuing a command, re-poll until output stops growing — the read blocks
 until bytes arrive, so no delay is needed between polls.
@@ -194,7 +195,7 @@ Bodies are in `/api.md`. Essentials:
 - `shell_id` ≠ `session_id`: terminal I/O (output-range / input / key / resize)
   takes `shell_id`.
 - With auth enabled, every API endpoint needs credentials (`/api.md` and
-  `/skills.md` are public and need none); keep tokens in headers only.
+  `/SKILL.md` are public and need none); keep tokens in headers only.
 - Password/sudo prompts belong to the human — never guess and paste secrets.
 - The instance's own `/api.md` is authoritative; this skill provides the
   workflow, not a frozen endpoint list.

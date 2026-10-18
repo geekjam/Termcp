@@ -13,6 +13,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
 	"github.com/open-mcp-ai/termcp/internal/sshconfig"
 )
 
@@ -31,6 +32,7 @@ type Store struct {
 	dataDir  string
 	mu       sync.Mutex
 	onChange atomic.Value // func(), fired after Save/Delete/Rename
+	keys     *encryptedfs.KeyManager
 }
 
 // SetOnChange registers a callback fired after a template changes. The
@@ -65,7 +67,7 @@ func (s *Store) configPath(name string) (string, error) {
 	if err := sshconfig.ValidateName(name); err != nil {
 		return "", err
 	}
-	return filepath.Join(s.root(), name, "config.toml"), nil
+	return filepath.Join(s.root(), name, s.configFilename()), nil
 }
 
 // Load reads and validates one extension by name.
@@ -74,13 +76,14 @@ func (s *Store) Load(name string) (*Extension, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := s.readConfig(name, p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("extension %q %w", name, ErrNotFound)
 		}
 		return nil, err
 	}
+	defer clear(data)
 	e, err := Parse(data)
 	if err != nil {
 		return nil, err
@@ -136,7 +139,7 @@ func (s *Store) ReadRaw(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := s.readConfig(name, p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("extension %q %w", name, ErrNotFound)
@@ -144,6 +147,7 @@ func (s *Store) ReadRaw(name string) ([]byte, error) {
 		return nil, err
 	}
 	if _, err := Parse(data); err != nil {
+		clear(data)
 		return nil, err
 	}
 	return data, nil
@@ -163,7 +167,7 @@ func (s *Store) List() ([]string, error) {
 		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		if st, err := os.Stat(filepath.Join(s.root(), e.Name(), "config.toml")); err == nil && !st.IsDir() {
+		if st, err := os.Stat(filepath.Join(s.root(), e.Name(), s.configFilename())); err == nil && !st.IsDir() {
 			names = append(names, e.Name())
 		}
 	}
@@ -180,6 +184,11 @@ func (s *Store) Save(e *Extension) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.keys != nil {
+		if err := s.checkEncryptedNameLocked(e.Name); err != nil {
+			return err
+		}
+	}
 	if err := s.saveLocked(e); err != nil {
 		return err
 	}
@@ -198,6 +207,10 @@ func (s *Store) saveLocked(e *Extension) error {
 	data, err := toml.Marshal(e)
 	if err != nil {
 		return fmt.Errorf("marshal extension: %w", err)
+	}
+	defer clear(data)
+	if s.keys != nil {
+		return s.writeEncrypted(e.Name, p, data)
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
 		return err
@@ -227,9 +240,16 @@ func (s *Store) removeLocked(p string) error {
 	if err := retryFS(func() error { return os.Remove(p) }); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	if s.keys != nil {
+		if err := encryptedfs.SyncParent(p); err != nil && !os.IsNotExist(err) {
+			return errors.Join(encryptedfs.ErrDurability, err)
+		}
+	}
 	// Best effort: leftover empty dirs are harmless, but a directory holding an
 	// unrelated file must not be swept away by a delete.
-	_ = os.Remove(filepath.Dir(p))
+	if err := os.Remove(filepath.Dir(p)); err == nil && s.keys != nil {
+		return encryptedfs.SyncParent(filepath.Dir(p))
+	}
 	return nil
 }
 

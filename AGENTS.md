@@ -57,7 +57,7 @@ shared absolute path; `t.TempDir()` is the default. See
 Working in this repo usually means driving Termcp itself. The full tool
 reference is `docs/mcp-tools.md`; every running instance also serves its own
 docs (`resources/list` returns real `http://<origin>/api.md` and
-`http://<origin>/skills.md` URLs). Three invariants are cheap to keep in mind
+`http://<origin>/SKILL.md` URLs). Three invariants are cheap to keep in mind
 without being told:
 
 - **Turns are the scarce resource.** An MCP call costs 2–10 ms; an assistant

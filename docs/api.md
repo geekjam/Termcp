@@ -9,7 +9,7 @@ kinds of callers:
 |----------|------|--------|
 | Web UI | `/` + `/api.html` | Humans (browser) |
 | MCP | `/sse` + `/message` or `/stream` | AI agents with an MCP client |
-| Agent Skill + REST | `/skills.md` (install once) + `/api/*` | AI agents driving Termcp with `curl` |
+| Agent Skill + REST | `/SKILL.md` (install once) + `/api/*` | AI agents driving Termcp with `curl` |
 | REST + WebSocket | `/api/*` + `/api/ui/ws` | Scripts / programs |
 
 This document covers the REST surface (scripting). Real-time terminal I/O goes over
@@ -39,13 +39,14 @@ can learn the API without MCP and without version drift:
 | Document | Path | When to use it |
 |----------|------|----------------|
 | HTTP API reference (this file) | `/api.md` | You drive Termcp over HTTP yourself (REST/WebSocket): endpoints, bodies, output-cursor semantics |
-| HTTP skill (curl recipes) | `/skills.md` | Install once into a skills directory so the curl workflow is available on demand later |
+| HTTP skill (curl recipes) | `/SKILL.md` | Install once into a skills directory so the curl workflow is available on demand later |
 
-`/skills.md` is served flat (as guessable as `/api.md`) but is a real Agent Skill:
+`/SKILL.md` is served flat (as guessable as `/api.md`) but is a real Agent Skill:
 save it as `termcp/SKILL.md` in your agent's skills directory — the directory name
 is what a skill loader discovers. Claude Code reads `~/.claude/skills/termcp/SKILL.md`;
-agents following the shared convention read `~/.agents/skills/termcp/SKILL.md`
-(project-scoped: `<project>/.claude/skills/termcp/SKILL.md`). Restart the agent
+Codex and agents following the shared convention read `~/.agents/skills/termcp/SKILL.md`
+(project-scoped: `<project>/.claude/skills/termcp/SKILL.md` or
+`<project>/.agents/skills/termcp/SKILL.md`, respectively). Restart the agent
 session afterwards; adding/removing a skill is just writing/deleting that folder.
 
 MCP clients get the same bytes as resources: `resources/list` exposes these two files
@@ -81,16 +82,48 @@ is handed the discovered bind address instead.
 
 Authentication does not apply to these two read-only documents: they carry no data
 and no secrets, and a fresh client (an agent before MCP setup, a script) has to be
-able to fetch them before it can use the API, so `/api.md` and `/skills.md` stay
+able to fetch them before it can use the API, so `/api.md` and `/SKILL.md` stay
 public even when a token is configured. Everything else — Web UI, REST, MCP, WebSocket
 — still requires credentials.
 
+The previous `/skills.md` URL remains a read-only alias for `/SKILL.md`, including
+MCP resource reads. New installations should use the canonical uppercase filename.
+
 ```bash
-curl -fsS "$BASE/api.md"                       # authoritative reference
-DIR=~/.claude/skills                           # Claude Code
-# DIR=~/.agents/skills                         # other agents
-mkdir -p "$DIR/termcp" && curl -fsS "$BASE/skills.md" -o "$DIR/termcp/SKILL.md"
+BASE=http://127.0.0.1:18765                       # replace with your instance origin
+curl -fsS "$BASE/api.md"                          # authoritative reference
+(
+  TERMCP_SKILL_DIR="$HOME/.claude/skills/termcp"   # Claude Code
+  # TERMCP_SKILL_DIR="$HOME/.agents/skills/termcp" # Codex / shared agents
+  # TERMCP_SKILL_DIR="./.agents/skills/termcp"     # current project (Codex)
+  mkdir -p "$TERMCP_SKILL_DIR" &&
+  TERMCP_SKILL_TMP=$(mktemp "$TERMCP_SKILL_DIR/.SKILL.XXXXXX") || exit
+  trap 'rm -f "$TERMCP_SKILL_TMP"' EXIT
+  curl -fsS "$BASE/SKILL.md" -o "$TERMCP_SKILL_TMP" &&
+  mv "$TERMCP_SKILL_TMP" "$TERMCP_SKILL_DIR/SKILL.md"
+)
 ```
+
+On Windows PowerShell:
+
+```powershell
+$termcpBase = 'http://127.0.0.1:18765'
+$termcpSkillDir = Join-Path $HOME '.claude/skills/termcp'
+# Codex / shared agents: use '.agents/skills/termcp' instead.
+# Project scope: use (Get-Location).Path instead of $HOME.
+New-Item -ItemType Directory -Force -Path $termcpSkillDir -ErrorAction Stop | Out-Null
+$termcpSkillTmp = Join-Path $termcpSkillDir ([IO.Path]::GetRandomFileName())
+try {
+  Invoke-WebRequest -UseBasicParsing -Uri "$termcpBase/SKILL.md" -OutFile $termcpSkillTmp -ErrorAction Stop
+  Move-Item -LiteralPath $termcpSkillTmp -Destination (Join-Path $termcpSkillDir 'SKILL.md') -Force -ErrorAction Stop
+} finally {
+  Remove-Item -LiteralPath $termcpSkillTmp -Force -ErrorAction SilentlyContinue
+}
+```
+
+These installers download to a unique temporary file before replacing `SKILL.md`,
+so a failed download leaves an existing installation intact. `/api.html` generates
+both commands for the current instance and selected agent/scope.
 
 ## 3. Authentication (optional, off by default)
 
@@ -140,12 +173,69 @@ Constraints:
   kept only the hash — `termcp daemon` management, `termcp stdio` — can
   still authenticate. The hash then doubles as a secret.
 - Tokens are never logged and must not go into URLs (query strings) — use headers.
-- Public exception: the two documentation endpoints `/api.md` and `/skills.md`
+- Public exception: the two documentation endpoints `/api.md` and `/SKILL.md`
   (GET/HEAD only, no data inside) are served **without** credentials, so agents
   and scripts can fetch the docs before they have a token. All other surfaces
   require the token.
 
 ---
+
+### Encrypted storage bootstrap
+
+The service starts with business operations blocked until storage is unlocked,
+migrated and recovered. Open `storage.html` on the same origin to set up or unlock
+storage. HTTP authentication applies independently of the storage password.
+
+| Method and path | JSON fields | Result |
+|-----------------|-------------|--------|
+| `GET /api/storage/status` | none | `state`, `password_configured`, `unlock_mode`, `unlock_mode_saved`, `auto_unlock`, `legacy_found`, `progress`, optional `error_code` and `auto_unlock_error` |
+| `POST /api/storage/initialize` | `new_password`, `confirm_password` | 202; creates a master key only for an uninitialized store, or adds the first optional password to a READY/CLEANUP_PENDING store already unlocked through system/ENV hosting; never replaces an existing password |
+| `POST /api/storage/unlock` | `password` | 202; unlocks an existing password slot, enrolls configured hosting only in automatic mode, and starts migration/recovery |
+| `POST /api/storage/password` | `current_password`, `new_password`, `confirm_password` | 200 only after the replacement envelope is durably saved; current-password proof is required even while unlocked |
+| `POST /api/storage/unlock-mode` | `unlock_mode` (`automatic` / `password`); `current_password` if configured, otherwise `new_password` and `confirm_password` for first manual setup | 200 only after policy and slots are durably saved together; requires READY/CLEANUP_PENDING and retains the data master key |
+
+Passwords are accepted only in `application/json` bodies (16 KiB maximum), never
+URLs. Unknown fields and trailing JSON are rejected. The four storage operations
+share a five-attempts-per-minute limit per process, including successful attempts.
+Remote password operations require TLS or a proxy source explicitly trusted via
+`TERMCP_STORAGE_TRUSTED_PROXIES` with `X-Forwarded-Proto: https`; loopback HTTP is
+allowed. The service does not trust arbitrary remote forwarding headers.
+
+States: `UNINITIALIZED`, `LOCKED`, `MIGRATING`, `RECOVERING`, `READY`,
+`CLEANUP_PENDING`, `FAILED`, `CLOSED`. During bootstrap, session/MCP requests return
+503 with `error: "storage_unavailable"` and the current `storage` status. Management,
+docs, setup assets and storage operations remain available. `CLEANUP_PENDING`
+permits business operations while warning that old plaintext cleanup is incomplete.
+Progress includes `stage`, unit `completed`/`total`, optional `bytes_completed` /
+`bytes_total`, and `resuming` for an interrupted migration.
+
+Confirmation mismatch returns 400; wrong current/storage password returns 403
+without logging out HTTP authentication; incompatible state returns 409; rate
+limits return 429 with `Retry-After`; unsafe password transport returns 426.
+`key_save_uncertain` (503) means publication happened but durability could not be
+confirmed: retain both passwords and verify after resolving the filesystem issue.
+There is no runtime lock endpoint. System hosting is the default: first startup
+creates a system-protected random master key, and subsequent starts unlock
+automatically. An explicitly saved unlock method takes precedence over deployment
+defaults; within automatic mode, nonempty `TERMCP_STORAGE_KEK` selects ENV hosting.
+ENV/system stores have no preset password; the initialize endpoint can add their
+first optional recovery password after automatic unlock and recovery. Password
+changes always require current-password proof and retain automatic hosting.
+In automatic mode, existing password-only stores require one successful password
+unlock to enroll hosting. Saved manual mode skips system/ENV unlock on every
+restart and does not re-enroll hosting after password unlock. Switching methods
+requires current-password proof when a password exists, or two matching new
+passwords when choosing manual mode for the first time. Manual mode removes all
+automatic slots; automatic mode first verifies provider availability. Policy and
+slots use a single authenticated version-2 key envelope, retaining version-1
+data files and compatibility when reading legacy key envelopes. Saving fails
+with 503 `automatic_unlock_unavailable` if hosting is unavailable, leaving the
+previous method intact; an invalid method returns 400 `invalid_unlock_mode`. If enrollment fails, storage remains usable with password recovery and
+`auto_unlock_error: "automatic_unlock_unavailable"`; the UI warns that a password
+will be needed after restart. `auto_unlock` is true only after successful use or
+persistence of a usable automatic-unlock slot. Containers without a native key
+service need ENV hosting for unattended restart. Explicit
+`TERMCP_STORAGE_KEY_PROVIDER=password` (without ENV) retains manual unlock.
 
 ## 4. Connection profiles
 
@@ -173,7 +263,8 @@ forgotten. Set it in the connection editor's checkbox or as
 
 `temporary: true` marks a remote profile held only in process memory. It remains
 available to REST, MCP, and the Web UI until termcp exits. It is never written
-under `ssh_configs/`.
+under `ssh_configs/` and is excluded from batch exports, even when explicitly
+named in an export request.
 
 ### `GET /api/connections/{name}`
 
@@ -209,13 +300,15 @@ routes: `reserved_profile` names the built-in `internal` profile, and
 
 ### `GET /api/connections/batch`
 
-Downloads all remote profiles as one TOML file, including temporary profiles.
-The built-in `internal` profile is excluded. The file contains credentials, so
-handle it as a secret.
+Downloads all persistent remote profiles as one TOML file. Temporary profiles
+and the built-in `internal` profile are excluded. The file contains credentials,
+so handle it as a secret.
 
-`?names=a,b` filters the download to exactly those profiles; a name that no
-longer resolves is skipped rather than failing the file. Naming `internal` in
-`names` is refused with `400` — export of the built-in profile does not exist.
+`?names=a,b` filters the download to those persistent profiles; temporary profiles
+and names that no longer resolve are skipped rather than failing the file. A
+selection containing only temporary or missing profiles returns an empty
+`connections` array. Naming `internal` in `names` is refused with `400` — export
+of the built-in profile does not exist.
 
 **Password-protected export.** Send `X-Termcp-Password: <password>` and the
 response is sealed with it instead of being plain TOML: `Content-Type:
@@ -270,9 +363,57 @@ password = "placeholder"
 ```
 
 Response: `201 { "imported": 2, "renamed": [{ "from": "host-one", "to": "host-one-2" }] }`
-when a name is changed; `renamed` is omitted when no names change. The Web UI
-passes the file to this endpoint unchanged; parsing and validation happen on
-the server.
+when a name is changed; `renamed` is omitted when no names change. This raw TOML
+endpoint remains available for existing clients. The Web UI uses the multipart
+import endpoint below; parsing and validation happen on the server.
+
+### `POST /api/connections/batch/export`
+
+Exports the same persistent-profile selection, optionally protected by an
+independent **file password**. This password is separate from the server storage
+master password; another Termcp instance can import the file without the original
+instance's data key. Temporary profiles remain excluded.
+
+Send `Content-Type: application/json` with:
+
+```json
+{"names":["host-one"],"password":"placeholder-file-password","confirm_password":"placeholder-file-password"}
+```
+
+Omit `names` (or use `[]`) to export all persistent remote profiles. Omit both
+password fields, or set both to `""`, for the existing plaintext
+`termcp-connections.toml`. A nonempty password requires a matching
+`confirm_password` and returns `application/octet-stream` as
+`termcp-connections.toml.enc`. The Web UI shows this choice before downloading.
+The legacy `GET /api/connections/batch` remains plaintext; it does not accept a
+password in its URL. All export responses use `Cache-Control: no-store`.
+
+### `POST /api/connections/batch/import?temporary=false`
+
+Accepts either plaintext TOML or the encrypted export. Send `multipart/form-data`
+with exactly one `file` part and an optional `password` field. Let the HTTP client
+set the multipart boundary. Files are detected by content, independent of their
+name. An encrypted file requires its export password; leave the password blank
+for plaintext. The upload is parsed in memory, without plaintext temporary files.
+
+The decoded TOML limit is 16 MiB (an encrypted envelope adds 88 bytes); the
+password limit is 16 KiB in UTF-8. `temporary=true`, collision renaming, validation
+and response fields are identical to the legacy plaintext importer. The complete
+file is authenticated before any profile is added: missing/wrong passwords,
+corrupted ciphertext or malformed TOML import no hosts. A password supplied for a
+plaintext file is rejected, rather than silently ignored.
+
+Both new endpoints inherit HTTP authentication and enforce same-origin POSTs.
+Nonempty passwords require HTTPS or loopback/trusted TLS-proxy transport, as with
+storage password operations. Passwords belong in request bodies only. One new
+import/export may run per handler at a time; another gets 429 with `Retry-After`.
+JSON errors include `password_confirmation_mismatch` (400),
+`import_password_required` (400), `invalid_import_password_or_file` (403),
+`plaintext_import_password` (400), `invalid_connection_file` (400),
+`secure_transport_required` (426), or `connection_transfer_busy` (429).
+Storage write failures return `connection_import_failed` (500). If publication
+happened but durability is unconfirmed, `connection_import_uncertain` (503)
+requires checking the refreshed profile list before retrying, to avoid duplicates.
 
 ### `POST /api/connections/test`
 
@@ -468,7 +609,7 @@ Response 200: Session object (same shape as a list element)
 ### `DELETE /api/sessions/{id}`
 
 **Permanent deletion**: disconnects the session (shells → forwards → SSH connection)
-and removes its on-disk session directory (`manifest.json` + `log.bin` + `log.jsonl`).
+and removes its on-disk session directory (encrypted metadata, event history and index files).
 Irreversible.
 
 ```
@@ -653,6 +794,9 @@ offers no better a signal that a command returned.
 
 ### `GET /api/shells/{id}/output-range`
 
+Output cursors count plaintext output bytes. Encryption headers, tags, resize and
+status events do not advance them; a cursor is never a physical `events.enc` offset.
+
 Reads a slice of a shell's retained output (**path id is a shell_id**).
 
 Compat: `GET /api/sessions/{id}/output-range` still works — a shell_id hits directly,
@@ -687,7 +831,7 @@ Response 200:
 > `d` is the raw byte window placed in a standard JSON string (not base64). A
 > byte sequence that is not valid UTF-8 cannot survive a JSON string; on Windows
 > ConPTY already replaces such sequences before Termcp sees them, and on Linux
-> `cat` of binary data may appear as U+FFFD. The bytes in `log.bin` are never
+> `cat` of binary data may appear as U+FFFD. The bytes in the decrypted output stream are never
 > altered — only this transport representation is lossy.
 
 ### `GET /api/shells/{id}/marks`
@@ -714,7 +858,7 @@ Response 200:
 |-------|---------|
 | `status` | `o` shell output · `i` a write from the HTTP/WebSocket API (the human at the browser) · `a` a write from an AI agent through MCP · `q`/`A` a review decision (no bytes of its own) |
 | `time` | Unix **milliseconds** — the moment the span started. Same unit as every other timestamp in this API (`clock.Now`, the manifests, `log.jsonl`) |
-| `start` | Byte offset in `log.bin` where the span starts |
+| `start` | Plaintext output byte offset where the span starts |
 | `end` | The next mark's `start`; the last span ends at `total_bytes` |
 | `total_bytes` | Current length of the byte log |
 
@@ -732,7 +876,7 @@ answer from the persisted index, so a closed session's timeline stays readable.
 
 | Query | Meaning |
 |-------|---------|
-| `start`, `end` | Restrict the answer to the byte window `[start, end)` of `log.bin`. Both must be given together (`400` otherwise), `start >= 0` and `end >= start` |
+| `start`, `end` | Restrict the answer to the plaintext output byte window `[start, end)`. Both must be given together (`400` otherwise), `start >= 0` and `end >= start` |
 
 With no parameters the response is the shell's whole index, exactly as above —
 the window is an addition, not a change. A windowed response is the part of the

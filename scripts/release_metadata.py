@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare and verify the versioned files included in a release commit."""
+"""Prepare, verify, and export the versioned release metadata and notes."""
 
 import argparse
 import datetime
@@ -130,6 +130,9 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     check = commands.add_parser("check", help="verify server.json and CHANGELOG.md")
     check.add_argument("--expected", help="release version, e.g. v0.2.5 or v0.2.8-rc.1")
+    notes = commands.add_parser("notes", help="export the reviewed notes for a release tag")
+    notes.add_argument("--expected", required=True, help="release tag, e.g. v0.2.5")
+    notes.add_argument("--output", type=Path, required=True, help="UTF-8 release body file")
     prepare = commands.add_parser("prepare", help="move Unreleased notes into a dated release")
     prepare.add_argument("version", help="release tag, e.g. v0.2.5")
     prepare.add_argument("--date", default=datetime.datetime.now(datetime.timezone.utc).date().isoformat())
@@ -171,6 +174,11 @@ def main():
 
     expected = args.expected or expected_from_pr()
     version = validate(text, manifest, expected)
+    if args.command == "notes":
+        _, _, _, release_body = changelog_parts(text)
+        args.output.write_text(release_body.strip() + "\n", encoding="utf-8")
+        print(f"exported reviewed release notes for v{version}")
+        return
     print(f"release metadata consistent: v{version}" + (" (release ready)" if expected else ""))
 
 

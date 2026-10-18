@@ -72,6 +72,10 @@ release PR whose metadata was forgotten.
 2. Review and edit the notes. They are the release's permanent record — check
    them against `git log <last release>..HEAD`: every user-visible change
    present, nothing that only matters to a developer.
+   The release workflow exports that exact version's reviewed CHANGELOG body
+   into the GitHub Release before the automatically generated change list.
+   `scripts/release_metadata.py notes --expected vX.Y.Z --output <output-file>`
+   previews the body and rejects mismatched versions or pending Unreleased notes.
 3. `make check-release RELEASE_VERSION=vX.Y.Z`, then
    `python3 -m unittest discover -s scripts -p '*_test.py'`.
 4. Merge only after the `Test` workflow passes. In GitHub branch protection,
@@ -137,3 +141,25 @@ the manifest bump the Python guard forbids.
 Versions are `vMAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH-rc.N`. Other suffixes
 (`-beta.1`, `-1`) are rejected by design: add one only with a matching rule for
 what it means to the registry and to `latest`.
+
+## Releases that migrate stored data
+
+The first release that enables encrypted storage must put a prominent upgrade
+notice before its feature list, in both the versioned CHANGELOG section and the
+GitHub Release body. Use the
+[migration notice draft](release-notes/encrypted-storage-migration.md) only after
+the migration feature is implemented and verified; a design document alone is
+not a reason to announce that a version migrates data.
+
+The notice must explicitly state that the new version migrates old persistent
+files on first startup after key setup or unlock. Include what is migrated,
+stopping old processes, backing up the configured data directory, extra disk
+space, startup downtime and progress, interrupted migrations, plaintext cleanup,
+key/backup retention, and the supported rollback procedure.
+
+Review the runtime messages alongside the release notice: users must see when
+migration starts, resumes, fails, completes, or leaves plaintext cleanup pending.
+Web UI, foreground CLI, daemon startup, and MCP stdio must follow the
+[migration notification contract](design/encrypted-storage.md#用户提示与升级告知).
+Do not mark a release ready until these messages and its published promises
+match the tested migration behavior.

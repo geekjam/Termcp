@@ -118,8 +118,8 @@ func TestResourcesListAndRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"http://127.0.0.1:18765/api.md":    false,
-		"http://127.0.0.1:18765/skills.md": false,
+		"http://127.0.0.1:18765/api.md":   false,
+		"http://127.0.0.1:18765/SKILL.md": false,
 	}
 	for _, r := range list.Resources {
 		if _, ok := want[r.URI]; ok {
@@ -150,6 +150,30 @@ func TestResourcesListAndRead(t *testing.T) {
 		t.Fatalf("unexpected resources/read payload: %s", result)
 	}
 
+}
+
+func TestSkillResourceCanonicalAndLegacyURI(t *testing.T) {
+	s := docsTestServer(t)
+	ctx := originContext("https://termcp.example")
+	want, err := fs.ReadFile(webui.Assets(), "SKILL.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/SKILL.md", "/skills.md"} {
+		var read struct {
+			Contents []struct{ URI, Text string } `json:"contents"`
+		}
+		result := callMCPCtx(t, s, ctx, "resources/read", map[string]any{"uri": "https://termcp.example" + path})
+		if err := json.Unmarshal(result, &read); err != nil {
+			t.Fatal(err)
+		}
+		if len(read.Contents) != 1 || read.Contents[0].Text != string(want) {
+			t.Fatalf("read %s did not return the canonical skill: %s", path, result)
+		}
+		if read.Contents[0].URI != "https://termcp.example/SKILL.md" {
+			t.Errorf("read %s returned URI %q", path, read.Contents[0].URI)
+		}
+	}
 }
 
 // TestLearnAPIPrompt verifies the prompt exists and points at this instance's docs.
@@ -198,7 +222,7 @@ func TestLearnAPIPrompt(t *testing.T) {
 		t.Fatalf("prompts/get returned no messages: %s", get)
 	}
 	text := got.Messages[0].Content.Text
-	for _, want := range []string{"http://127.0.0.1:18765/api.md", "http://127.0.0.1:18765/skills.md", "restart nginx on prod"} {
+	for _, want := range []string{"http://127.0.0.1:18765/api.md", "http://127.0.0.1:18765/SKILL.md", "restart nginx on prod"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("learn-api prompt misses %q:\n%s", want, text)
 		}
@@ -867,7 +891,7 @@ func TestResourcesFollowRequestOrigin(t *testing.T) {
 		t.Fatalf("prompts/get returned nothing: %s", get)
 	}
 	text := got.Messages[0].Content.Text
-	for _, want := range []string{origin + "/api.md", origin + "/skills.md"} {
+	for _, want := range []string{origin + "/api.md", origin + "/SKILL.md"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("learn-api prompt misses %s:\n%s", want, text)
 		}

@@ -25,6 +25,9 @@ jobs:
       - name: Check release metadata
         run: python3 scripts/release_metadata.py check --expected "$GITHUB_REF_NAME"
 
+      - name: Export reviewed release notes
+        run: python3 scripts/release_metadata.py notes --expected "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/termcp-release-notes.md"
+
       - name: Build
         run: |
           mkdir -p dist
@@ -59,6 +62,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: ${{ runner.temp }}/termcp-release-notes.md
           generate_release_notes: true
           # An rc tag is an internal test build: mark it as a pre-release so it
           # is not offered as "the latest release" on the repository page.

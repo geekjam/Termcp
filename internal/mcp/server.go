@@ -205,6 +205,13 @@ func (s *Server) StreamableHTTPHandler() http.Handler {
 
 // Start begins serving MCP over SSE on the given address.
 func (s *Server) Start(addr string) error {
+	s.PrepareHTTP(addr)
+	return s.sseServer.Start(addr)
+}
+
+// PrepareHTTP configures resources before an independently bootstrapped HTTP
+// listener publishes the handlers (for startup storage unlock/migration).
+func (s *Server) PrepareHTTP(addr string) {
 	host, port, _ := net.SplitHostPort(addr)
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
@@ -216,7 +223,6 @@ func (s *Server) Start(addr string) error {
 	// Docs resources/prompts need baseURL, so they are registered here (once)
 	// rather than in New(). registerDocs is idempotent for a single Start.
 	s.registerDocs()
-	return s.sseServer.Start(addr)
 }
 
 // Stop gracefully shuts down the SSE server.

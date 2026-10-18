@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 const batchFixture = `[[connections]]
@@ -29,6 +31,52 @@ user = "tester"
 password = "placeholder"
 `
 
+func TestBatchExportExcludesTemporaryProfiles(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if _, err := s.ImportBatch([]byte(batchFixture), true); err != nil {
+		t.Fatal(err)
+	}
+	if !s.IsTemporary("alpha") || !s.IsTemporary("beta") {
+		t.Fatal("imported profiles must be temporary")
+	}
+	if err := s.Save("saved", []byte("kind = \"remote\"\nhost = \"saved.example\"\nuser = \"tester\"\npassword = \"placeholder\"\n")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		only []string
+		want string
+	}{
+		{name: "all", want: "saved"},
+		{name: "selected mixed", only: []string{"saved", "alpha", "beta"}, want: "saved"},
+		{name: "selected temporary", only: []string{"alpha", "beta"}},
+		{name: "selected temporary and missing", only: []string{"alpha", "missing"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := s.ExportBatch(tc.only)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var exported struct {
+				Connections []struct{ Name string }
+			}
+			if err := toml.Unmarshal(data, &exported); err != nil {
+				t.Fatal(err)
+			}
+			var names []string
+			for _, profile := range exported.Connections {
+				names = append(names, profile.Name)
+			}
+			if got := strings.Join(names, ","); got != tc.want {
+				t.Fatalf("exported profiles = %q, want %q", got, tc.want)
+			}
+			if strings.Contains(string(data), "alpha.example") || strings.Contains(string(data), "beta.example") || strings.Contains(string(data), "jump.example") {
+				t.Fatal("export included temporary profile contents")
+			}
+		})
+	}
+}
+
 func TestBatchImportExportAndTemporaryLifetime(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(dir)
@@ -51,12 +99,20 @@ func TestBatchImportExportAndTemporaryLifetime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(exported), "internal") {
-		t.Fatal("export included built-in internal profile")
+	if strings.Contains(string(exported), "internal") || strings.Contains(string(exported), "alpha") || strings.Contains(string(exported), "beta") {
+		t.Fatal("export included a built-in or temporary profile")
 	}
 	restarted := NewStore(dir)
 	if _, err := restarted.Load("alpha"); !errors.Is(err, ErrNotFound) {
 		t.Fatal("temporary profile survived a new store")
+	}
+	source := NewStore(t.TempDir())
+	if _, err := source.ImportBatch([]byte(batchFixture), false); err != nil {
+		t.Fatal(err)
+	}
+	exported, err = source.ExportBatch(nil)
+	if err != nil {
+		t.Fatal(err)
 	}
 	result, err = restarted.ImportBatch(exported, false)
 	if err != nil || result.Imported != 2 || len(result.Renamed) != 0 {

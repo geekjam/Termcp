@@ -5,7 +5,7 @@ title: "[BUG]: <简明描述问题>"
 labels: ["bug", "triage"]
 ---
 
-<!-- 
+<!--
 [AGENT INSTRUCTION]
 If you are an AI Coding Agent filing this issue:
 - Do NOT hallucinate reproduction steps or environment logs.

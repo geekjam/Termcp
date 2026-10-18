@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/open-mcp-ai/termcp/internal/encryptedfs"
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
 
@@ -32,19 +33,22 @@ func validateID(id string) error {
 	return nil
 }
 
-// Store persists sessions under the layout described in docs/design/session-storage.md:
+// Store exposes one plaintext output coordinate system for both backends.
+// NewEncrypted uses meta.enc and authenticated events.enc (see encrypted-storage
+// design). New retains the legacy layout for migration and compatibility tests:
 //
 //	<data-dir>/sessions/<session_id>/manifest.json
 //	<data-dir>/sessions/<session_id>/<shell_id>/manifest.json
 //	<data-dir>/sessions/<session_id>/<shell_id>/log.bin
 //	<data-dir>/sessions/<session_id>/<shell_id>/log.jsonl
 //
-// log.bin is the single source of truth for a shell's byte stream: it is only
-// ever appended to, so a byte's offset is its file position and never changes.
-// log.jsonl holds one mark per status transition and carries no payload.
+// Only the legacy backend equates output offsets with log.bin file positions.
+// The encrypted backend translates logical output offsets to authenticated
+// records and stores marks inside the authoritative event stream.
 type Store struct {
 	dataDir string
 	mu      sync.RWMutex
+	enc     *encryptedBackend
 
 	// logSink owns every open append handle and performs every append; see
 	// logsink.go. It replaces a mutex plus a handle map: a lock guarding handles
@@ -100,6 +104,9 @@ func New(dataDir string) *Store {
 }
 
 func (s *Store) initDir(path string) error {
+	if s.enc != nil {
+		return encryptedfs.MkdirAllDurable(path)
+	}
 	return os.MkdirAll(path, 0700)
 }
 
@@ -128,7 +135,7 @@ func (s *Store) initLogDir(sessionID, shellID string) error {
 	if deleted {
 		return fmt.Errorf("%w: session %q was deleted", ErrSessionGone, sessionID)
 	}
-	return os.MkdirAll(s.shellDir(sessionID, shellID), 0700)
+	return s.initDir(s.shellDir(sessionID, shellID))
 }
 
 // atomicWriteFile writes a file by writing a sibling temp file, flushing it, then
@@ -247,6 +254,13 @@ func (s *Store) SaveSession(sess api.Session) error {
 	if err := validateID(sess.ID); err != nil {
 		return err
 	}
+	if s.enc != nil {
+		s.enc.mu.Lock()
+		defer s.enc.mu.Unlock()
+		if s.enc.closed {
+			return os.ErrClosed
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -270,8 +284,23 @@ func (s *Store) SaveShell(sessionID string, sh api.Session) error {
 	if err := validateID(sh.ID); err != nil {
 		return err
 	}
+	if s.enc != nil {
+		s.enc.mu.Lock()
+		defer s.enc.mu.Unlock()
+		if s.enc.closed {
+			return os.ErrClosed
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.enc != nil {
+		if s.deleted[sessionID] {
+			return ErrSessionGone
+		}
+		if s.enc.deleted[logKey(sessionID, sh.ID)] {
+			return ErrSessionGone
+		}
+	}
 
 	dir := s.shellDir(sessionID, sh.ID)
 	if err := s.initDir(dir); err != nil {
@@ -289,6 +318,9 @@ func (s *Store) DeleteShell(sessionID, shellID string) error {
 	if err := validateID(shellID); err != nil {
 		return err
 	}
+	if s.enc != nil {
+		return s.deleteEncrypted(sessionID, shellID)
+	}
 	s.logSink.closeShell(sessionID, shellID)
 	s.dropMarkIndex(sessionID, shellID)
 
@@ -304,6 +336,9 @@ func (s *Store) DeleteShell(sessionID, shellID string) error {
 func (s *Store) DeleteSession(sessionID string) error {
 	if err := validateID(sessionID); err != nil {
 		return err
+	}
+	if s.enc != nil {
+		return s.deleteEncrypted(sessionID, "")
 	}
 	s.logSink.closeSession(sessionID)
 	s.dropSessionMarkIndex(sessionID)
@@ -333,6 +368,9 @@ func (s *Store) DeleteSession(sessionID string) error {
 // list file: one session is one directory, so there is no second copy of the
 // list to fall out of sync with the data.
 func (s *Store) LoadSessions() ([]api.Session, error) {
+	if s.enc != nil {
+		return s.loadEncryptedSessions()
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -413,11 +451,18 @@ func (s *Store) writeManifest(dir string, v any) error {
 		return err
 	}
 	path := filepath.Join(dir, "manifest.json")
+	if s.enc != nil {
+		path = filepath.Join(dir, "meta.enc")
+	}
 	sum := sha256.Sum256(data)
 	if prev, ok := s.manifestHash[path]; ok && prev == sum {
 		return nil
 	}
-	if err := atomicWriteFile(path, data, 0644); err != nil {
+	write := func() error { return atomicWriteFile(path, data, 0644) }
+	if s.enc != nil {
+		write = func() error { return s.writeEncryptedMetadata(dir, data) }
+	}
+	if err := write(); err != nil {
 		return err
 	}
 	// Recorded only after a successful write, so a failed write is retried rather
@@ -427,7 +472,13 @@ func (s *Store) writeManifest(dir string, v any) error {
 }
 
 func (s *Store) readManifest(dir string) (*api.Session, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	var data []byte
+	var err error
+	if s.enc != nil {
+		data, err = s.readEncryptedMetadata(dir)
+	} else {
+		data, err = os.ReadFile(filepath.Join(dir, "manifest.json"))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -453,6 +504,9 @@ func (s *Store) readManifest(dir string) (*api.Session, error) {
 // per Store for the life of the process, which is what the previous design spent a
 // mutex to avoid and is worth it for having no shared handle map at all.
 func (s *Store) Close() error {
+	if s.enc != nil {
+		return s.enc.close()
+	}
 	return s.logSink.closeAll()
 }
 
@@ -465,7 +519,11 @@ func (s *Store) HasPersistedHistory(sessionID string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	_, err := os.Stat(filepath.Join(s.sessionDir(sessionID), "manifest.json"))
+	name := "manifest.json"
+	if s.enc != nil {
+		name = "meta.enc"
+	}
+	_, err := os.Stat(filepath.Join(s.sessionDir(sessionID), name))
 	return err == nil
 }
 

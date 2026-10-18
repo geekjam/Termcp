@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>termcp · Storage</title>
+  <link id="termcp-theme" rel="stylesheet" href="themes/default-light/theme.css">
+  <script src="static/theme-boot.js"></script>
+  <link rel="stylesheet" href="static/css/storage.css">
+</head>
+<body>
+  <header class="app-header"><h1>termcp</h1><select id="storage-language" aria-label="Language"><option value="auto">Auto</option><option value="en">English</option><option value="zh-Hans">简体中文</option><option value="zh-Hant">繁體中文</option></select></header>
+  <main class="storage-panel">
+    <h2 data-i18n="storage.title">Encrypted storage</h2>
+    <p id="storage-state" role="status" aria-live="polite"></p>
+    <p id="storage-auto-unlock" role="status" aria-live="polite" hidden></p>
+    <p id="storage-migration" class="storage-notice" hidden data-i18n="storage.migrationNotice">Old files will be migrated after setup or unlock. Stop the old process, back up the data directory and allow extra disk space. Sessions are unavailable during migration.</p>
+    <p id="storage-resuming" class="storage-notice" hidden data-i18n="storage.resumingNotice">Resuming a previous migration. Completed encrypted files will be verified before reuse.</p>
+    <p id="storage-cleanup" class="storage-notice" hidden data-i18n="storage.cleanupPending">Encrypted storage is available, but old plaintext files remain. Check permissions and retry by restarting.</p>
+    <p id="storage-progress" role="status" aria-live="polite"></p>
+    <form id="storage-mode-form" hidden>
+      <label><span data-i18n="storage.mode.label">Unlock method</span><select id="storage-unlock-mode" aria-describedby="storage-mode-hint"><option value="automatic" data-i18n="storage.mode.automatic">Automatic unlock (default)</option><option value="password" data-i18n="storage.mode.password">Enter master password after every restart</option></select></label>
+      <p id="storage-mode-hint"></p>
+      <label id="storage-mode-current-row" hidden><span data-i18n="storage.current">Current master password</span><input id="storage-mode-current" type="password" autocomplete="current-password" maxlength="4096"></label>
+      <label id="storage-mode-new-row" hidden><span data-i18n="storage.new">New master password</span><input id="storage-mode-new" type="password" autocomplete="new-password" maxlength="4096"></label>
+      <label id="storage-mode-confirm-row" hidden><span data-i18n="storage.confirm">Confirm master password</span><input id="storage-mode-confirm" type="password" autocomplete="new-password" maxlength="4096"></label>
+      <button id="storage-mode-save" type="submit" data-i18n="storage.mode.save">Save unlock method</button>
+    </form>
+    <form id="storage-form" hidden>
+      <label id="storage-current-row"><span id="storage-current-label" data-i18n="storage.current">Current master password</span><input id="storage-current" type="password" autocomplete="current-password" maxlength="4096"></label>
+      <label id="storage-new-row"><span data-i18n="storage.new">New master password</span><input id="storage-new" type="password" autocomplete="new-password" maxlength="4096"></label>
+      <label id="storage-confirm-row"><span data-i18n="storage.confirm">Confirm master password</span><input id="storage-confirm" type="password" autocomplete="new-password" maxlength="4096"></label>
+      <button id="storage-submit" type="submit"></button>
+    </form>
+    <p id="storage-result" role="status" aria-live="polite"></p>
+    <p id="storage-error" class="storage-notice" role="alert" hidden></p>
+    <a id="storage-workspace" href="./" hidden data-i18n="storage.workspace">Open workspace</a>
+  </main>
+  <script src="static/js/i18n-catalog.js"></script>
+  <script src="static/js/i18n.js"></script>
+  <script src="static/storage.js"></script>
+</body>
+</html>

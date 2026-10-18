@@ -2,6 +2,13 @@
 
 Termcp 是纯 Go、无 CGO 的单二进制，可交叉编译到任意平台（Windows 用 ConPTY，macOS / Linux 用 POSIX PTY，行为一致）。这里收录容器化与自建部署方式；安装方式见 README 的「30 秒上手」，全部 flag 见 [`cli.md`](./cli.md)。
 
+## 加密存储与首次升级
+
+启用加密存储的版本会在完成密钥设置或解锁后迁移旧持久化文件；升级前停止旧进程、备份数据目录并预留额外空间，详见 [加密存储与升级](encrypted-storage.md)。迁移完成前会话/MCP 暂不可用，Web UI 和启动日志显示状态。
+
+无人值守容器应通过宿主机的秘密管理提供随机 32 字节 KEK 的 Base64 值 `TERMCP_STORAGE_KEK`，并在下方 `docker run` 命令中增加 `-e TERMCP_STORAGE_KEK -e TERMCP_STORAGE_KEY_PROVIDER=env`。不要在命令示例或镜像中写入真实 KEK。该值与 HTTP 认证 token 独立，需在容器重建后保持可用。
+使用 Web UI 主密码时，通过 HTTPS 反向代理访问 `storage.html`，并配置 `TERMCP_STORAGE_TRUSTED_PROXIES`。即使端口发布到宿主机 localhost，容器看到的客户端也可能是桥接地址，不能依赖它通过 loopback HTTP 的密码提交限制。
+
 ## 运行官方镜像
 
 registry 镜像以非 root 用户 `termcp`（uid/gid 1000）运行，并把 `/home/termcp` 声明为 `VOLUME`——所有状态（会话、SSH 配置、转录）默认落在 `~/.termcp`。镜像里只有二进制：没有内置 entrypoint、没有 EXPOSE，绑定地址由运行命令决定。
@@ -87,7 +94,7 @@ docker compose up -d --build
 
 ## 纯 API 构建
 
-不需要 Web UI 时，`-tags no_webui` 产出的是只含 REST、MCP、WebSocket 与两份 agent 文档（`/api.md`、`/skills.md`）的二进制：它既不嵌入也不服务 Web UI（`/`、`/api.html`、`/static/*` 一律 404），可与完整版并存。
+不需要 Web UI 时，`-tags no_webui` 产出的是只含 REST、MCP、WebSocket 与两份 agent 文档（`/api.md`、`/SKILL.md`）的二进制：它既不嵌入也不服务 Web UI（`/`、`/api.html`、`/static/*` 一律 404），可与完整版并存。
 
 ```bash
 make build-api    # dist/termcp-api-<os>-<arch>

@@ -12,6 +12,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/open-mcp-ai/termcp/internal/approval"
+	"github.com/open-mcp-ai/termcp/internal/capability"
 )
 
 // startGatedSession opens a session and turns approval mode on, returning the
@@ -343,14 +344,18 @@ func TestOperationSummaryNamesTheOperationAndItsTarget(t *testing.T) {
 // gate — and the failure is invisible, because everything still "works".
 func TestReadOnlyToolsAreNotGated(t *testing.T) {
 	gated := map[approval.Kind]bool{}
-	for _, g := range gatedTools {
-		gated[g.kind] = true
+	for _, c := range capability.All() {
+		if c.Kind != "" {
+			gated[c.Kind] = true
+		}
 	}
 	for _, tool := range []string{"file_read", "file_stat", "file_urls", "file_getwd", "shell_output", "shell_list"} {
-		for _, g := range gatedTools {
-			if g.tool == tool {
-				t.Errorf("%s is a read and must not be gated", tool)
-			}
+		c, ok := capability.ForTool(tool)
+		if !ok {
+			t.Fatalf("%s has no capability row", tool)
+		}
+		if c.Kind != "" {
+			t.Errorf("%s is a read and must not be gated", tool)
 		}
 	}
 	// The gate has to cover both kinds of change, or the hole this test exists
@@ -388,11 +393,11 @@ func TestFileWriteIsHeldAndExecutedOnApproval(t *testing.T) {
 	_ = dir.Close()
 
 	// The write is submitted through the tool, the way an agent would.
-	res, err := s.handleFileWrite(context.Background(), makeRequest(map[string]any{
+	res, err := s.call(context.Background(), "file_write", map[string]any{
 		"session_id":  sessionID,
 		"remote_path": target,
 		"data":        "approved-content",
-	}))
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,11 +474,11 @@ func TestFileWriteIsNotExecutedOnRejection(t *testing.T) {
 	_ = cli.RemoveFile(target)
 	_ = cli.Close()
 
-	if _, err := s.handleFileWrite(context.Background(), makeRequest(map[string]any{
+	if _, err := s.call(context.Background(), "file_write", map[string]any{
 		"session_id":  sessionID,
 		"remote_path": target,
 		"data":        "must-not-appear",
-	})); err != nil {
+	}); err != nil {
 		t.Fatal(err)
 	}
 

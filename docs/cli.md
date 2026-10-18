@@ -21,7 +21,6 @@ termcp <subcommand> [action] [flags]
 | `--auth-token` | *(未设)* | HTTP 认证的静态 token（或 `$TERMCP_AUTH_TOKEN`）。每个客户端——API、MCP、浏览器——都要出示。与 `--auth-hash` 互斥。 |
 | `--auth-hash` | *(未设)* | token 的加盐 SHA-256（`sha256-<salt_hex>-<digest_hex>`），服务端不保存明文（或 `$TERMCP_AUTH_HASH`）。用 `termcp --gen-auth-hash` 生成。哈希配置的实例也接受哈希串本身作为凭据——`termcp daemon` 管理与 `termcp stdio` 只拿到哈希也能用——因此把哈希当机密对待。与 `--auth-token` 互斥。 |
 | `--disable-auth` | `false` | **刻意**关掉 HTTP 认证，包括非 loopback 绑定（或 `$TERMCP_DISABLE_AUTH_TOKEN=1`）。请配合 loopback 端口，只让本机调用者可达。与 `--auth-token`/`--auth-hash` 同时给出是错误，而不是某个参数静默胜出。 |
-| `--mcp-defer-tools` | `false` | 给低频 MCP 工具（`file_*`、`forward`、`shell_resize`…）打上 `defer_loading` 标记，让客户端按需拉取 schema，缩小首次 `tools/list`。默认关闭：忽略该标记的客户端——或经会丢弃该标记的网关转发的客户端——会从此看不到这些工具。见 [`clients.md`](./clients.md#工具懒加载)。 |
 | `--idle-timeout` | `30s / 不限` | 守护实例在无任何连接或请求时可自行退出前的时长，如 `10m`；`0` 关闭。默认：`termcp daemon stdio` 拉起的实例 30s，`termcp daemon start` 拉起的实例不限时。 |
 | `--namespace` | 空（实例所有者） | 仅 stdio 桥：声明调用方命名空间（字母/数字/`-_.`，最长 64），桥发的每个请求都带 `X-Termcp-Namespace`。实例侧于是只列出/接受这个命名空间里的会话，多个 bridge 接到同一实例时互不干扰。空 = 今天的全局视图。名字非法在启动时就被拒，不会留到第一条请求才失败。 |
 | `--gen-auth-hash` | *(动作)* | 生成 `--auth-hash` 用的加盐 SHA-256 哈希后退出（token 从参数取，或在终端下无回显地从 stdin 读）。 |
@@ -129,7 +128,7 @@ termcp <subcommand> [action] [flags]
 
 ## 权限边界
 
-这些 flag 是你的**能力闸门**：`--no-internal` 把 Agent 限制在远程主机，`--mcp-manage-ssh-configs` 打开 SSH 配置写权限，`--mcp-defer-tools` 控制首次工具列表的上下文开销。按场景收紧或放宽 Agent 能碰的东西。认证见 [`clients.md`](./clients.md#认证)。
+这些 flag 是你的**能力闸门**：`--no-internal` 把 Agent 限制在远程主机，`--mcp-manage-ssh-configs` 打开 SSH 配置写权限。按场景收紧或放宽 Agent 能碰的东西。认证见 [`clients.md`](./clients.md#认证)。
 
 ## 示例
 

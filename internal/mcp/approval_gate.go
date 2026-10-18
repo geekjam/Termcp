@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/open-mcp-ai/termcp/internal/approval"
-
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/open-mcp-ai/termcp/internal/approval"
 )
 
 // Review mode over the MCP surface.
@@ -48,51 +48,10 @@ func withApproved(ctx context.Context) context.Context {
 	return context.WithValue(ctx, approvedOpKey{}, true)
 }
 
-// gatedTool is one MCP operation that review mode can hold.
-//
-// tool is the MCP tool name and kind is what the queue records, so the browser
-// can label the request and the executor can find its handler. Keeping both in
-// one table means a new gated operation is one row, not three edits that can
-// drift apart.
-type gatedTool struct {
-	tool string
-	kind approval.Kind
-}
-
-// gatedTools lists every MCP tool whose effect on the host needs a decision.
-//
-// Reads are absent on purpose: listing a directory or reading a file changes
-// nothing, and putting them behind a decision would train a reviewer to click
-// Accept without reading, which is how a gate stops working.
-var gatedTools = []gatedTool{
-	{"file_write", approval.KindFileWrite},
-	{"file_delete", approval.KindFileDelete},
-	{"file_rename", approval.KindFileRename},
-	{"file_mkdir", approval.KindFileMkdir},
-	{"file_perm", approval.KindFilePerm},
-	{"file_link", approval.KindFileLink},
-	{"file_fs", approval.KindFileTruncate},
-	{"forward", approval.KindForwardOpen},
-}
-
-// forwardKind separates opening a tunnel from closing one: they are different
-// decisions, and the worklist should say which is which. A session can be scoped
-// to one without the other.
-func forwardKind(args map[string]any) approval.Kind {
-	if getString(args, "action", "") == "close" {
-		return approval.KindForwardClose
-	}
-	return approval.KindForwardOpen
-}
-
-// kindForTool maps a tool name to the kind recorded on the request.
-func kindForTool(tool string) approval.Kind {
-	for _, g := range gatedTools {
-		if g.tool == tool {
-			return g.kind
-		}
-	}
-	return approval.Kind(tool)
+// gatedPayload is what a held operation stores so it can be replayed.
+type gatedPayload struct {
+	Tool string         `json:"tool"`
+	Args map[string]any `json:"args"`
 }
 
 // gateOperation holds an MCP operation for review when the session gates.
@@ -121,17 +80,12 @@ func (s *Server) gateOperation(ctx context.Context, request mcpgo.CallToolReques
 	if bad != nil || sess == nil {
 		return nil, false
 	}
-	/* Which operations this session holds. Asked before the arguments are
-	   marshalled because the kind depends on them for `forward` (open vs close),
-	   and a session scoped to one of the two must let the other through. */
-	kind := kindForTool(tool)
-	if tool == "forward" {
-		kind = forwardKind(request.GetArguments())
-	}
-	if !sess.GatesKind(kind) {
+	// Which operations this session holds. Asked before the arguments are
+	// marshalled because the kind depends on them for `forward` (open vs close),
+	// and a session scoped to one of the two must let the other through.
+	if !sess.GatesKind(kindFor(tool, request.GetArguments())) {
 		return nil, false
 	}
-
 	args := request.GetArguments()
 	summary := summarizeOperation(tool, args)
 	payload, err := json.Marshal(gatedPayload{Tool: tool, Args: args})
@@ -139,7 +93,7 @@ func (s *Server) gateOperation(ctx context.Context, request mcpgo.CallToolReques
 		return toolError(CodeOperationFailed, "cannot describe the operation for review: %s", err.Error()), true
 	}
 	if _, err := sess.SubmitOperation(approval.Submission{
-		Kind:    kind,
+		Kind:    kindFor(tool, args),
 		Source:  "mcp",
 		Summary: summary,
 		Payload: payload,
@@ -147,12 +101,6 @@ func (s *Server) gateOperation(ctx context.Context, request mcpgo.CallToolReques
 		return toolError(CodeOperationFailed, "%s", err.Error()), true
 	}
 	return reviewPendingOperationResult(summary), true
-}
-
-// gatedPayload is what a held operation stores so it can be replayed.
-type gatedPayload struct {
-	Tool string         `json:"tool"`
-	Args map[string]any `json:"args"`
 }
 
 // reviewWaitTail is the operational half of every review-mode reply: what the
@@ -191,93 +139,6 @@ func reviewPendingOperationResult(summary string) *mcpgo.CallToolResult {
 	return reviewPendingReply(fmt.Sprintf("Submitted for review: %s. %s", summary, reviewWaitTail))
 }
 
-// summarizeOperation renders one line a reviewer can decide on.
-//
-// This is the whole value of the feature: a reviewer who cannot tell what they
-// are approving is not reviewing anything. It reads the same arguments the
-// handler will use, so the summary cannot describe something different from
-// what will run.
-func summarizeOperation(tool string, args map[string]any) string {
-	s := func(k string) string { return strings.TrimSpace(getString(args, k, "")) }
-	n := func(k string, def float64) float64 { return getFloat64(args, k, def) }
-
-	switch tool {
-	case "file_write":
-		path := s("remote_path")
-		if lp := s("local_path"); lp != "" {
-			return fmt.Sprintf("write to %s from local file %s", path, lp)
-		}
-		return fmt.Sprintf("write %s to %s", describeBytes(len(s("data")), s("mode")), path)
-
-	case "file_delete":
-		return "delete " + s("remote_path")
-
-	case "file_rename":
-		return fmt.Sprintf("move %s to %s", s("from_path"), s("to_path"))
-
-	case "file_mkdir":
-		return "create directory " + s("remote_path")
-
-	case "file_perm":
-		path := s("remote_path")
-		switch s("action") {
-		case "chmod":
-			return fmt.Sprintf("chmod %04o on %s", int(n("mode", 0)), path)
-		case "chown":
-			return fmt.Sprintf("chown uid=%d gid=%d on %s", int(n("uid", 0)), int(n("gid", 0)), path)
-		case "chtimes":
-			return "set times on " + path
-		default:
-			return "change permissions on " + path
-		}
-
-	case "file_link":
-		switch s("action") {
-		case "readlink":
-			return "read link " + s("remote_path") // read-only; kept for completeness
-		case "symlink":
-			return fmt.Sprintf("symlink %s -> %s", s("link_path"), s("target"))
-		default:
-			return fmt.Sprintf("hard link %s -> %s", s("new_path"), s("existing_path"))
-		}
-
-	case "file_fs":
-		return fmt.Sprintf("truncate %s to %d bytes", s("remote_path"), int64(n("size", 0)))
-
-	case "forward":
-		switch s("action") {
-		case "close":
-			return "close port forward " + s("forward_id")
-		case "remote":
-			return fmt.Sprintf("open remote forward %s:%d -> %s:%d",
-				s("local_host"), int(n("local_port", 0)), s("remote_host"), int(n("remote_port", 0)))
-		case "dynamic":
-			return fmt.Sprintf("open SOCKS5 proxy on port %d", int(n("local_port", 0)))
-		default:
-			return fmt.Sprintf("open local forward :%d -> %s:%d",
-				int(n("local_port", 0)), s("remote_host"), int(n("remote_port", 0)))
-		}
-	}
-	return tool
-}
-
-// describeBytes says how much a write carries, in the unit a human reads.
-// The byte count is what the reviewer actually needs to judge scale; the mode
-// is stated because hex and text mean different things for the same length.
-func describeBytes(dataLen int, mode string) string {
-	unit := "bytes"
-	switch {
-	case dataLen >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(dataLen)/(1<<20))
-	case dataLen >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(dataLen)/(1<<10))
-	}
-	if mode != "" && mode != "text" {
-		unit = mode + " bytes"
-	}
-	return fmt.Sprintf("%d %s", dataLen, unit)
-}
-
 // ExecuteApprovedOperation replays a non-terminal approved request.
 //
 // It is the counterpart of gateOperation: the payload names the tool and holds
@@ -293,17 +154,22 @@ func (s *Server) ExecuteApprovedOperation(req approval.Request) error {
 	if err := json.Unmarshal(req.Payload, &p); err != nil {
 		return fmt.Errorf("cannot read the approved operation: %w", err)
 	}
-	handler := s.gatedHandler(p.Tool)
+	handler := s.handlerFor(p.Tool)
 	if handler == nil {
 		return fmt.Errorf("no handler for approved operation %q", p.Tool)
 	}
 	if p.Args == nil {
 		p.Args = map[string]any{}
 	}
-	// Re-resolve the session id from the request: it is authoritative, and a
-	// payload that named a different session must not be able to redirect the
-	// operation that a human approved.
-	p.Args["session_id"] = req.SessionID
+	// Re-resolve the session id from the request when the operation acts on one:
+	// it is authoritative, and a payload that named a different session must not
+	// be able to redirect the operation that a human approved. An operation that
+	// acts on the instance instead (installing an extension, creating a profile)
+	// has no session to pin, and injecting an empty one would only overwrite what
+	// the payload carried.
+	if req.SessionID != "" {
+		p.Args["session_id"] = req.SessionID
+	}
 
 	call := mcpgo.CallToolRequest{}
 	call.Params.Name = p.Tool
@@ -317,30 +183,6 @@ func (s *Server) ExecuteApprovedOperation(req approval.Request) error {
 		return fmt.Errorf("%s", toolResultText(res))
 	}
 	return nil
-}
-
-// gatedHandler returns the handler for a gated tool name.
-func (s *Server) gatedHandler(tool string) func(context.Context, mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	switch tool {
-	case "file_write":
-		return s.handleFileWrite
-	case "file_delete":
-		return s.handleFileDelete
-	case "file_rename":
-		return s.handleFileRename
-	case "file_mkdir":
-		return s.handleFileMakeDir
-	case "file_perm":
-		return s.handleFilePerm
-	case "file_link":
-		return s.handleFileLinkOp
-	case "file_fs":
-		return s.handleFileFsOp
-	case "forward":
-		return s.handleForwardOps
-	default:
-		return nil
-	}
 }
 
 // toolResultText extracts the text of an error result for the caller's message.

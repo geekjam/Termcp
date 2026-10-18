@@ -90,12 +90,10 @@ func main() {
 	flag.StringVar(&cfg.AssetsDir, "assets", cfg.AssetsDir, "External static assets directory: files there override the embedded Web UI and docs; missing files fall back to the embed (default: $TERMCP_ASSETS_DIR or ~/.termcp/assets)")
 	flag.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "Log verbosity: debug|info|warn|error")
 	flag.BoolVar(&cfg.NoInternal, "no-internal", cfg.NoInternal, "Disable the built-in loopback SSH profile (no internal connection)")
-	flag.BoolVar(&cfg.MCPManageSSHConfigs, "mcp-manage-ssh-configs", cfg.MCPManageSSHConfigs, "Enable MCP tools to create/edit/delete SSH configs (off by default; passwords/keys are never exposed)")
+	flag.BoolVar(&cfg.MCPManageSSHConfigs, "mcp-manage-ssh-configs", cfg.MCPManageSSHConfigs, "Enable the profile write actions of the `profile` directive (create/edit/copy/delete) over MCP (off by default; passwords/keys are never exposed)")
 	flag.StringVar(&cfg.AuthToken, "auth-token", cfg.AuthToken, "HTTP authentication token (or $TERMCP_AUTH_TOKEN)")
 	flag.StringVar(&cfg.AuthHash, "auth-hash", cfg.AuthHash, "Salted SHA-256 HTTP token hash (or $TERMCP_AUTH_HASH; generate with 'termcp --gen-auth-hash')")
 	flag.BoolVar(&cfg.DisableAuth, "disable-auth", cfg.DisableAuth, "Disable HTTP authentication entirely, even on non-loopback binds (or TERMCP_DISABLE_AUTH_TOKEN=1). Errors out if a token or hash is also configured.")
-	flag.BoolVar(&cfg.MCPDeferTools, "mcp-defer-tools", cfg.MCPDeferTools, "Mark low-frequency MCP tools with defer_loading so clients fetch them on demand. Off by default: every tool is listed eagerly, which is what clients without deferred-tool support (e.g. Codex behind a gateway) need.")
-	flag.StringVar(&cfg.MCPDeferToolsLevel, "mcp-defer-tools-level", cfg.MCPDeferToolsLevel, "MCP defer_loading level: off (every tool eager, default), partial (driving loop eager, low-frequency surfaces deferred), all (only session_start/shell_input/shell_key/shell_output eager). Overrides --mcp-defer-tools.")
 	var genAuthHash bool
 	flag.BoolVar(&genAuthHash, "gen-auth-hash", false, "Generate the salted SHA-256 hash of a token for --auth-hash / $TERMCP_AUTH_HASH, then exit (token from an argument, or from stdin without echo on a terminal)")
 	var showVersion bool
@@ -301,13 +299,6 @@ func runServer(cfg *config.Config, idleTimeoutArg string, idleTimeout time.Durat
 			os.Exit(2)
 		}
 		verifier = value
-	}
-	level := cfg.MCPDeferToolsLevel
-	switch level {
-	case "", "off", "partial", "all":
-	default:
-		fmt.Fprintln(os.Stderr, "invalid --mcp-defer-tools-level: expected off, partial or all")
-		os.Exit(2)
 	}
 	slog.SetDefault(slog.New(buildLogHandler(cfg)))
 	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)

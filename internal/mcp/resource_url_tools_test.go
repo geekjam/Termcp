@@ -627,9 +627,9 @@ func TestApprovalGateCannotBeBypassedByALocator(t *testing.T) {
 		if tc.spelling == "session locator" {
 			sidArg = "termcp://#" + sid + ":1"
 		}
-		res, err := s.handleFileWrite(context.Background(), makeRequest(map[string]any{
+		res, err := s.call(context.Background(), "file_write", map[string]any{
 			"session_id": sidArg, "remote_path": tc.target, "data": "gated",
-		}))
+		})
 		if err != nil {
 			t.Fatalf("%s: %v", tc.spelling, err)
 		}
@@ -647,9 +647,9 @@ func TestApprovalGateCannotBeBypassedByALocator(t *testing.T) {
 	// An ungated session must still not be gated: the check is the session's
 	// approval setting, not the presence of a locator.
 	plain, plainSid, _, _, _ := locatorFixture(t)
-	res, err := plain.handleFileWrite(context.Background(), makeRequest(map[string]any{
+	res, err := plain.call(context.Background(), "file_write", map[string]any{
 		"session_id": "termcp://#" + plainSid, "remote_path": filepath.Join(t.TempDir(), "plain.txt"), "data": "x",
-	}))
+	})
 	if err != nil || res.IsError {
 		t.Fatalf("ungated write via locator failed: %v %v", err, res)
 	}

@@ -21,7 +21,8 @@ func TestPipeReadersKeepLogAndBufferOrder(t *testing.T) {
 	store := storage.New(t.TempDir())
 	mm := message.NewManager(store)
 	parent := &Session{Session: api.Session{ID: "pipe-order"}, msgMgr: mm}
-	cs := &ChildShell{ID: "main", parent: parent, buf: buffer.New(0)}
+	cs := &ChildShell{ID: "main", buf: buffer.New(0)}
+	cs.parent.Store(parent)
 	t.Cleanup(func() {
 		mm.ForgetSession(parent.ID)
 		_ = store.Close()

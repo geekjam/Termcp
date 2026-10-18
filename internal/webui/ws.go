@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/open-mcp-ai/termcp/internal/capability"
 	"github.com/open-mcp-ai/termcp/internal/session"
 	"github.com/open-mcp-ai/termcp/pkg/api"
 )
@@ -297,7 +298,7 @@ func (c *uiWS) handleWSInput(msg *wsClientMsg) {
 	// A refusal is silent here because a stream has no response to carry an error:
 	// the frame is dropped and the reason is logged. The REST endpoint is where a
 	// caller gets told why.
-	if c.refuseWSCapability(shell, "shell_input") {
+	if c.refuseWSCapability(shell, capability.ShellInput) {
 		return
 	}
 	// msg.D is the JSON string xterm produced, not base64: the frame is standard
@@ -320,7 +321,7 @@ func (c *uiWS) handleWSResize(msg *wsClientMsg) {
 	if shell.Info().Status != api.SessionRunning {
 		return
 	}
-	if c.refuseWSCapability(shell, "shell_resize") {
+	if c.refuseWSCapability(shell, capability.ShellResize) {
 		return
 	}
 	if err := shell.ResizePty(msg.Rows, msg.Cols); err != nil {

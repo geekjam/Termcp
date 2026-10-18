@@ -96,9 +96,7 @@ func TestApprovalScopesHoldOnlyTheNamedKinds(t *testing.T) {
 			t.Fatal(err)
 		}
 		shell := &ChildShell{}
-		shell.mu.Lock()
-		shell.parent = s
-		shell.mu.Unlock()
+		shell.parent.Store(s)
 		if shell.RequiresApproval() {
 			t.Error("a session scoped to file writes must let shell input through")
 		}
@@ -110,9 +108,7 @@ func TestApprovalScopesHoldOnlyTheNamedKinds(t *testing.T) {
 			t.Fatal(err)
 		}
 		shell := &ChildShell{}
-		shell.mu.Lock()
-		shell.parent = s
-		shell.mu.Unlock()
+		shell.parent.Store(s)
 		if !shell.RequiresApproval() {
 			t.Error("a session scoped to shell input must hold typing")
 		}

@@ -136,11 +136,14 @@ show their native login prompt).
 A valid token is not the only gate. A session created by an **extension** carries a
 capability whitelist (`allow` / `paths`), and it is enforced on this surface too — a
 call outside it answers `403` with `{"error_code":"forbidden", ...}` instead of
-performing the work. The list is the same one the MCP tools honour, under the same
-names, so `shell_input`, `file_read`, and the rest mean the same thing whichever
-transport you use; a route that mirrors a gated tool is gated with it. There is no
-point retrying: use `extension(action=get)` to read what the template permits, or
-ask the operator to widen it.
+performing the work. The list names **capabilities** (`shell.input`, `file.read`, …),
+which is the one vocabulary every surface shares: the MCP `term` entry, the
+specialised MCP tools, REST and the WebSocket all resolve a request to a capability
+and ask the same table, so an operation is admitted identically whichever transport
+carries it; a route that mirrors a gated capability is gated with it. Old manifests
+that list tool names (`shell_input`, `file_read`) still work — the names are
+translated at load. There is no point retrying: `ext get` reads what the template
+permits, or ask the operator to widen it.
 
 | Caller | Credentials |
 |--------|-------------|
@@ -588,7 +591,7 @@ a client labels and copies the primary tab from server data rather than assuming
 a number of its own. See section 5 for the locator meaning of `index`.
 
 An omitted or blank `ssh_config` is refused with `400` (`ssh_config is required`),
-exactly as MCP's `session_start` refuses it. It is not defaulted to any profile:
+exactly as MCP's `pipe` / `pty` refuses it. It is not defaulted to any profile:
 a misspelled name fails loudly, and a missing one must too, because the only
 plausible default is the host loopback — the machine holding every stored
 credential. Ask for it by name (`"ssh_config": "internal"`) when that is what
@@ -825,7 +828,7 @@ Response 200:
 > describe the raw window (start..end covers everything the window held), only
 > `d` shrinks. A line that spans an o/e boundary is split by the filter and
 > rejoined across segments without losing a byte. This is the REST twin of the
-> MCP `shell_output(stream=)` parameter, reading the same `log.stdio` switch
+> MCP `read --stream o|e`, reading the same `log.stdio` switch
 > index through the same manager.
 
 > `d` is the raw byte window placed in a standard JSON string (not base64). A
@@ -898,7 +901,7 @@ Errors: `404` unknown shell; `400` a half-named or invalid window
 ### `GET /api/shells/{id}/lines`
 
 Line-addressed reads over a shell's byte log — the REST twin of the MCP
-`shell_output(from_line=...)` parameter, reading the same line index
+`read --from-line N` directive, reading the same line index
 (`log.stdio`'s sibling `log.lines`) through the same manager. Line numbers are
 1-based and absolute, they never shift for the life of the shell, and the
 trailing partial line (bytes with no closing newline) takes no number.
@@ -1014,7 +1017,7 @@ Errors: `404` unknown shell; `400` a missing or out-of-range `cols`.
 ### `POST /api/shells/{id}/input`
 
 Write text bytes to a running shell (path id is **shell_id**). Script-friendly
-counterpart of the WebSocket `input` message and the MCP `shell_input` tool.
+counterpart of the WebSocket `input` message and the MCP `type` directive.
 
 ```
 Request:
@@ -1482,7 +1485,7 @@ next policy would let it reappear as something nobody saw.
 While review is on, a write reaches a shell through exactly one path:
 
 ```
-MCP shell_input / shell_key       ─┐
+MCP type / key                    ─┐
 MCP file_write / file_delete / …  ─┼─→ queue → a human → executed → host
 MCP forward (local/remote/dynamic)─┘
 ```
@@ -1610,7 +1613,7 @@ Semantics:
 - `404` unknown id; `409` already decided or execution failed.
 
 > **What is approved.** The request records the *input string*, not a parsed
-> command. `shell_input("rm -rf / ; ls")` is one request covering two commands.
+> command. `type <handle> "rm -rf / ; ls"` is one request covering two commands.
 > Splitting it would require shell parsing, which is not attempted.
 
 > **A dead session cancels what is pending.** A request whose session has gone
@@ -1670,7 +1673,7 @@ the action's output begins — so a row leads to the exact transcript bytes.
 
 Output spans are **not** in the feed. Every command produces output, and a single
 `find` can print thousands of lines; including them would bury the handful of rows
-a reader cares about. Follow `bytes` into `shell_output` or the REST range route to
+a reader cares about. Follow `bytes` into `read` or the REST range route to
 see the result.
 
 Query parameters: `limit` (default 200, max 2000), `since_ms` (page forward without

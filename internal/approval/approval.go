@@ -100,6 +100,19 @@ const (
 	KindForwardOpen Kind = "forward_open"
 	// KindForwardClose closes one.
 	KindForwardClose Kind = "forward_close"
+	// KindExtensionCreate installs an extension template. It is gated because it
+	// changes WHAT the agent can reach from then on: an approved extension stays
+	// resident and is used without asking again, so the decision a human makes
+	// here covers every later use. Its content (command or url, allow, paths,
+	// forwards) rides in the summary — approving "an extension" without seeing
+	// what it runs would be approving a name.
+	KindExtensionCreate Kind = "ext_create"
+	// KindExtensionUpdate changes an installed template's ability list.
+	KindExtensionUpdate Kind = "ext_update"
+	// KindProfileCreate adds an SSH profile: a new host the agent may reach.
+	KindProfileCreate Kind = "profile_create"
+	// KindProfileEdit changes where an existing profile points.
+	KindProfileEdit Kind = "profile_edit"
 )
 
 // Request is one submitted operation awaiting a decision, plus its outcome.
@@ -211,6 +224,8 @@ var AllKinds = []Kind{
 	KindFileWrite, KindFileDelete, KindFileRename, KindFileMkdir,
 	KindFilePerm, KindFileLink, KindFileTruncate,
 	KindForwardOpen, KindForwardClose,
+	KindExtensionCreate, KindExtensionUpdate,
+	KindProfileCreate, KindProfileEdit,
 }
 
 // ValidKind reports whether kind is one this build gates.

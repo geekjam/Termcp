@@ -151,7 +151,7 @@ func TestGuardRefusesForeignNamespace(t *testing.T) {
 
 	check := func(t *testing.T, ctx context.Context, tool string, args map[string]any) *mcpgo.CallToolResult {
 		t.Helper()
-		return (toolGuard{server: s}).check(ctx, tool, makeRequest(args))
+		return (toolGuard{server: s}).check(ctx, tool, lookupGate(tool), makeRequest(args))
 	}
 
 	t.Run("the owner may drive it", func(t *testing.T) {
@@ -216,11 +216,11 @@ func TestGuardRefusesInfrastructureToNamespacedCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if bad := (toolGuard{server: s}).check(namespaceContext("alice"), "shell_input",
+	if bad := (toolGuard{server: s}).check(namespaceContext("alice"), "shell_input", lookupGate("shell_input"),
 		makeRequest(map[string]any{"shell_id": infra.ID})); bad == nil {
 		t.Error("a namespaced caller must not reach an extension's session")
 	}
-	if bad := (toolGuard{server: s}).check(context.Background(), "shell_input",
+	if bad := (toolGuard{server: s}).check(context.Background(), "shell_input", lookupGate("shell_input"),
 		makeRequest(map[string]any{"shell_id": infra.ID})); bad != nil {
 		_, msg := decodeToolError(t, bad)
 		t.Errorf("the operator holds extension handles by design: %s", msg)

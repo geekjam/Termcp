@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/open-mcp-ai/termcp/internal/capability"
 	"github.com/open-mcp-ai/termcp/internal/clock"
 	"github.com/open-mcp-ai/termcp/internal/session"
 	"github.com/open-mcp-ai/termcp/internal/sftp"
@@ -62,7 +63,7 @@ func (h *Handler) handleListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Debug("handleListFiles", "session", sid, "path", path)
-	_, sshClient, ok := h.resolveFileSession(sid, "file_stat", [][2]string{{"path", path}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileStat, [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -130,7 +131,7 @@ func (h *Handler) handleDownloadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, "file_read", [][2]string{{"path", path}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileRead, [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -325,7 +326,7 @@ func (h *Handler) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, "file_write", [][2]string{{"path", path}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileWrite, [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -376,7 +377,7 @@ func (h *Handler) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "path required"})
 		return
 	}
-	_, sshClient, ok := h.resolveFileSession(sid, "file_delete", [][2]string{{"path", path}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileDelete, [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}
@@ -416,7 +417,7 @@ func (h *Handler) handleRenameFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, "file_rename", [][2]string{{"from", from}, {"to", to}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileRename, [][2]string{{"from", from}, {"to", to}}, w)
 	if !ok {
 		return
 	}
@@ -450,7 +451,7 @@ func (h *Handler) handleMakeDir(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, sshClient, ok := h.resolveFileSession(sid, "file_mkdir", [][2]string{{"path", path}}, w)
+	_, sshClient, ok := h.resolveFileSession(sid, capability.FileMkdir, [][2]string{{"path", path}}, w)
 	if !ok {
 		return
 	}

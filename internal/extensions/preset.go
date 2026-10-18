@@ -2,6 +2,8 @@ package extensions
 
 import (
 	"strings"
+
+	"github.com/open-mcp-ai/termcp/internal/capability"
 )
 
 // Preset returns the starting template for a kind. Every field it fills is a
@@ -44,22 +46,28 @@ func Preset(kind string) Extension {
 // session's lifecycle is the reconciler's, so tools that stop or delete it are
 // deliberately absent — an agent that could terminate the extension could also
 // deny it to every later user of the same extension.
+//
+// Entries are capability ids (internal/capability), not tool names: the same
+// list is enforced on the MCP tools, the REST routes and the WebSocket, and
+// those three do not spell an operation the same way. A template written before
+// the switch still holds tool names and still works — session.Restriction.Allows
+// translates them.
 var mcpAllow = []string{
-	"shell_input",
-	"shell_key",
-	"shell_output",
-	"shell_reader_register",
-	"shell_reader_unregister",
-	"shell_notify",
-	"session_info",
+	capability.ShellInput,
+	capability.ShellKey,
+	capability.ShellOutput,
+	capability.ShellReaderRegister,
+	capability.ShellReaderUnregister,
+	capability.ShellNotify,
+	capability.SessionInfo,
 }
 
 // skillAllow is a read-only window onto remote files: list and read, nothing
 // else. The Paths whitelist is what actually scopes it; this list only says
-// which tools may be scoped at all.
+// which capabilities may be scoped at all.
 var skillAllow = []string{
-	"file_read",
-	"file_stat",
+	capability.FileRead,
+	capability.FileStat,
 }
 
 const mcpNotes = `This extension is a stdio MCP server reached through a pipe shell. Drive it

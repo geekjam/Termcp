@@ -88,19 +88,10 @@ func buildApplication(cfg *config.Config, keys *encryptedfs.KeyManager, server *
 		return nil, a, err
 	}
 	options := []mcpmod.Option{mcpmod.WithHTTPServer(server)}
-	level := cfg.MCPDeferToolsLevel
-	if level == "" && cfg.MCPDeferTools {
-		level = mcpmod.DeferPartial
-	}
-	if level != "" && level != mcpmod.DeferOff {
-		options = append(options, mcpmod.DeferLevel(level))
-	}
 	a.mcp = mcpmod.New(a.sessions, messages, profiles, forwards, versionString(), options...)
 	a.mcp.SetDocsFS(webui.Assets())
 	a.mcp.NoInternal = cfg.NoInternal
-	if cfg.MCPManageSSHConfigs {
-		a.mcp.RegisterSSHConfigWriteTools()
-	}
+	a.mcp.ManageSSHConfigs = cfg.MCPManageSSHConfigs
 	a.mcp.PrepareHTTP(server.Addr)
 	mux := http.NewServeMux()
 	mux.Handle("GET /sse", a.mcp.SSEHandler())

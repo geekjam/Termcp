@@ -46,9 +46,6 @@ func (s *Server) handleFileRead(ctx context.Context, request mcpgo.CallToolReque
 func (s *Server) handleFileWrite(ctx context.Context, request mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 	args := request.GetArguments()
 	sessionID := strings.TrimSpace(getString(args, "session_id", ""))
-	if res, held := s.gateOperation(ctx, request, "file_write", sessionID); held {
-		return res, nil
-	}
 	remotePath := getString(args, "remote_path", "")
 	offset := int64(getFloat64(args, "offset", 0))
 	data := getString(args, "data", "")
@@ -116,9 +113,6 @@ func (s *Server) handleFileDelete(ctx context.Context, request mcpgo.CallToolReq
 	args := request.GetArguments()
 	sessionID := strings.TrimSpace(getString(args, "session_id", ""))
 	remotePath := getString(args, "remote_path", "")
-	if res, held := s.gateOperation(ctx, request, "file_delete", sessionID); held {
-		return res, nil
-	}
 	if sessionID == "" {
 		return toolError(CodeInvalidArgument, "%s", "session_id required"), nil
 	}
@@ -140,9 +134,6 @@ func (s *Server) handleFileRename(ctx context.Context, request mcpgo.CallToolReq
 	args := request.GetArguments()
 	sessionID := strings.TrimSpace(getString(args, "session_id", ""))
 	fromPath := getString(args, "from_path", "")
-	if res, held := s.gateOperation(ctx, request, "file_rename", sessionID); held {
-		return res, nil
-	}
 	toPath := getString(args, "to_path", "")
 	if sessionID == "" {
 		return toolError(CodeInvalidArgument, "%s", "session_id required"), nil
@@ -165,9 +156,6 @@ func (s *Server) handleFileMakeDir(ctx context.Context, request mcpgo.CallToolRe
 	args := request.GetArguments()
 	sessionID := strings.TrimSpace(getString(args, "session_id", ""))
 	remotePath := getString(args, "remote_path", "")
-	if res, held := s.gateOperation(ctx, request, "file_mkdir", sessionID); held {
-		return res, nil
-	}
 	if sessionID == "" {
 		return toolError(CodeInvalidArgument, "%s", "session_id required"), nil
 	}
@@ -254,9 +242,6 @@ func (s *Server) handleFilePerm(ctx context.Context, request mcpgo.CallToolReque
 	args := request.GetArguments()
 	sessionID := strings.TrimSpace(getString(args, "session_id", ""))
 	action := getString(args, "action", "")
-	if res, held := s.gateOperation(ctx, request, "file_perm", sessionID); held {
-		return res, nil
-	}
 
 	if sessionID == "" {
 		return toolError(CodeInvalidArgument, "%s", "session_id required"), nil
@@ -321,9 +306,6 @@ func (s *Server) handleFileLinkOp(ctx context.Context, request mcpgo.CallToolReq
 	// readlink changes nothing, so it is not gated: putting a read behind a
 	// decision teaches a reviewer to click Accept without reading.
 	if action != "readlink" {
-		if res, held := s.gateOperation(ctx, request, "file_link", sessionID); held {
-			return res, nil
-		}
 	}
 
 	if sessionID == "" {
@@ -377,9 +359,6 @@ func (s *Server) handleFileFsOp(ctx context.Context, request mcpgo.CallToolReque
 	action := getString(args, "action", "")
 	// realpath and statvfs are reads; only truncate changes the host.
 	if action == "truncate" {
-		if res, held := s.gateOperation(ctx, request, "file_fs", sessionID); held {
-			return res, nil
-		}
 	}
 
 	if sessionID == "" {

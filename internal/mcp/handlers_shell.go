@@ -8,6 +8,7 @@ import (
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/open-mcp-ai/termcp/internal/capability"
 	"github.com/open-mcp-ai/termcp/internal/clock"
 	"github.com/open-mcp-ai/termcp/internal/session"
 	"github.com/open-mcp-ai/termcp/internal/sshclient"
@@ -160,12 +161,17 @@ func (s *Server) writeShellInput(shell *session.ChildShell, text string) (map[st
 		}
 	}
 
-	// Under approval mode the text is held, not written and not yet queued.
+	// Under review mode the text is held, not written and not yet queued.
 	//
 	// A command line is text plus the enter that ends it, and those arrive as two
 	// calls. Staging the text keeps a reviewer's unit whole: they see `echo hi`
 	// and the newline as one command, not two decisions that could disagree.
-	if shell.RequiresApproval() {
+	//
+	// The decision comes from the capability table (shell.input is a Staged
+	// reviewable operation), not from an `if` written here: this was one of the
+	// two places where review was gated from inside a handler, so a new reviewable
+	// operation was covered only if someone remembered to add a third.
+	if s.reviewHolds(shell) {
 		if err := shell.StageForApproval("mcp", text); err != nil {
 			return nil, toolError(CodeOperationFailed, "%s", err.Error())
 		}
@@ -222,7 +228,7 @@ func (s *Server) handlePressKey(ctx context.Context, request mcpgo.CallToolReque
 // pressShellKey is the single-shell key press shared by the one-id and batch
 // paths.
 func (s *Server) pressShellKey(shell *session.ChildShell, key string, repeat int) (map[string]any, *mcpgo.CallToolResult) {
-	if shell.RequiresApproval() {
+	if s.reviewHolds(shell) {
 		// The ending key commits whatever text this shell staged, so the queue holds
 		// one complete command line. With nothing staged the key alone is the unit:
 		// ctrl+c interrupts a running process, and a bare enter runs an empty line,
@@ -237,6 +243,29 @@ func (s *Server) pressShellKey(shell *session.ChildShell, key string, repeat int
 		return nil, toolError(CodeOperationFailed, "%s", err.Error())
 	}
 	return map[string]any{"success": true}, nil
+}
+
+// reviewHolds reports whether review mode holds input to this shell.
+//
+// It is the ONE place the question "does a human have to approve typing here"
+// is asked, and it answers from the shell's capability row (shell.input is a
+// Staged, reviewable operation) rather than from a policy restated per surface.
+// Before this, the `if shell.RequiresApproval()` lines sat in two handlers, which
+// meant "the human's own keyboard is not reviewed" held only because twelve REST
+// and WebSocket call sites each happened not to write the check — a decision
+// living in the absence of code rather than in code.
+//
+// A detached shell (no parent session) never gates: there is no policy that could
+// apply to it.
+func (s *Server) reviewHolds(shell *session.ChildShell) bool {
+	if shell == nil {
+		return false
+	}
+	c, ok := capability.ForTool("shell_input")
+	if !ok || !c.Staged {
+		return false
+	}
+	return shell.RequiresApproval()
 }
 
 // reviewFields is the canonical review-mode payload as a map, shared by the

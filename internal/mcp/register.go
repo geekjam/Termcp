@@ -125,7 +125,7 @@ func New(sessMgr *session.Manager, msgMgr *message.Manager, sshConfigs *sshconfi
 	if sessMgr != nil {
 		sessMgr.SetNotifyHooks(s.notifyMgr.OnOutput, s.notifyMgr.OnExit, s.notifyMgr.ClearShell)
 	}
-	registerTools(mcpServer, s)
+	registerTermTools(mcpServer, s)
 
 	s.mcpServer = mcpServer
 	// Both transports lift the request's own origin into the context, so a tools/list

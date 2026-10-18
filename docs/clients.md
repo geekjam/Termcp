@@ -308,13 +308,10 @@ claude mcp add --transport http termcp http://your-server:18765/stream --header 
 
 不要把 Token 放进 URL，也不要贴进共享配置或截图。
 
-## 工具懒加载
+## 工具面：一个入口
 
-MCP 客户端会在 `tools/list` 里取回每个工具的 JSON schema，所以工具多的服务端要在上下文预算里为它付账。MCP 规范给了个逃生口：给低频工具打 `defer_loading` 标记，客户端按需加载它们的 schema。Termcp 的 31 个工具分成热路径 **12** 个（会话生命周期 + shell 输入输出——永远列出）与低频宽面 **19** 个（11 个 SFTP `file_*` 工具、`forward`、`shell_resize`/`shell_detect`/`shell_notify`、`shell_reader_register`/`shell_reader_unregister`、`message`、`ssh_config`）。
+`tools/list` 只有一个工具 `term`（约 2.0 KB），参数是 `cmd` 加九个窗口参数。与上下文预算相关的三件事因此都不再是问题：
 
-`--mcp-defer-tools` 打开这个标记，且**默认关闭**：
-
-- **默认**——31 个工具全部带着完整 schema 立即列出。这是所有不实现按需加载的客户端所需要的——包括经 AxonHub 这类网关与 Termcp 对话的 Codex，网关可能丢掉 `defer_loading` 标记。标记一丢，那些工具就无法按需重新加载，只会从模型视野里消失。
-- **`--mcp-defer-tools`**——19 个低频工具带 `defer_loading`；12 个核心工具保持立即加载，所以 `session_start → shell_input → shell_output` 这个循环永远不需要一次搜索往返。支持按需加载的客户端（基于 mcp-go 的客户端、Claude Code）只为它们真正用到的 schema 付账。
-
-两种模式都是同样的 31 个工具：打开该 flag 从不删除工具，只是从首次列表里扣下 schema。分类表在 `internal/mcp/toolopts.go` 的 `deferredTools`。
+- **不再需要 `defer_loading`。** 那个机制解决的是「工具太多，先别给 schema」；一个工具没有可延后加载的部分。`--mcp-defer-tools` 与分类表已删除。
+- **客户端不必理解任何标记。** 丢掉未知字段的网关（实测某些 Codex 链路会丢掉 `defer_loading`）只会丢掉一个不存在的字段，不会丢工具。
+- **能力不随工具数增长。** 装一个 MCP server、一条技能扩展、十条别名之后，`tools/list` 逐字节不变；差异只出现在 `cmd` 的返回内容里（`ext list` / `ps` 不同），不在工具面。

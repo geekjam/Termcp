@@ -350,11 +350,9 @@ func (cs *ChildShell) RequiresApproval() bool {
 	return p != nil && p.GatesKind(approval.KindShellInput)
 }
 
-// parentSession reads the parent pointer under the shell lock.
+// parentSession reads the parent pointer.
 func (cs *ChildShell) parentSession() *Session {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return cs.parent
+	return cs.parent.Load()
 }
 
 // SubmitForApproval queues a command line addressed to this shell and returns

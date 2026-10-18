@@ -1,6 +1,7 @@
 package encryptedfs
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -62,6 +63,88 @@ func (m *KeyManager) ChangePasswordAndSave(path string, current, password, confi
 	published, err := saveEnvelope(path, candidate.envelope)
 	if published {
 		m.envelope = candidate.envelope
+		if err != nil {
+			return errors.Join(ErrDurability, err)
+		}
+	}
+	return err
+}
+
+// AddPasswordAndSave sets the first optional recovery password after a system
+// or ENV provider has unlocked the store. It cannot replace an existing password
+// and never changes the data key or any automatic-unlock slot.
+func (m *KeyManager) AddPasswordAndSave(path string, password, confirmation []byte, cost Argon2Parameters) error {
+	if subtle.ConstantTimeCompare(password, confirmation) != 1 {
+		return ErrConfirmation
+	}
+	provider, err := NewPasswordProvider(password, cost)
+	if err != nil {
+		return err
+	}
+	defer provider.Destroy()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, slot := range m.envelope.Slots {
+		if slot.Provider == "password" {
+			return ErrAuthentication
+		}
+	}
+	if len(m.envelope.Slots) >= maxSlots {
+		return ErrFormat
+	}
+	slot, err := wrapKeySlot(m.envelope, m.master, provider)
+	if err != nil {
+		return err
+	}
+	envelope := m.envelope.header()
+	envelope.Slots = append(append([]keySlot(nil), m.envelope.Slots...), slot)
+	published, err := saveEnvelope(path, envelope)
+	if published {
+		m.envelope = envelope
+		if err != nil {
+			return errors.Join(ErrDurability, err)
+		}
+	}
+	return err
+}
+
+// EnsureAutoUnlockAndSave retains all other slots, including password recovery.
+// An existing usable slot is left unchanged. A missing or unavailable slot is
+// replaced only on an already-unlocked manager; startup must never call this to
+// repair credentials before authenticating. Password changes have their own API.
+func (m *KeyManager) EnsureAutoUnlockAndSave(path string, provider KeyProvider) error {
+	if provider == nil || provider.Name() == "password" {
+		return ErrProviderUnavailable
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.envelope.UnlockMode == UnlockPassword {
+		return ErrUnlockMode
+	}
+	if verified, err := unlockEnvelope(m.envelope, provider); err == nil {
+		matched := subtle.ConstantTimeCompare(verified.master[:], m.master[:]) == 1
+		clear(verified.master[:])
+		if matched {
+			return nil
+		}
+	}
+	envelope := m.envelope.header()
+	for _, slot := range m.envelope.Slots {
+		if slot.Provider != provider.Name() {
+			envelope.Slots = append(envelope.Slots, slot)
+		}
+	}
+	if len(envelope.Slots) >= maxSlots {
+		return ErrFormat
+	}
+	slot, err := wrapKeySlot(envelope, m.master, provider)
+	if err != nil {
+		return err
+	}
+	envelope.Slots = append(envelope.Slots, slot)
+	published, err := saveEnvelope(path, envelope)
+	if published {
+		m.envelope = envelope
 		if err != nil {
 			return errors.Join(ErrDurability, err)
 		}

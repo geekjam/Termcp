@@ -178,9 +178,14 @@ type keySlot struct {
 }
 
 type keyEnvelope struct {
-	Version uint16    `json:"version"`
-	StoreID []byte    `json:"store_id"`
-	Slots   []keySlot `json:"slots"`
+	Version    uint16     `json:"version"`
+	StoreID    []byte     `json:"store_id"`
+	Slots      []keySlot  `json:"slots"`
+	UnlockMode UnlockMode `json:"unlock_mode,omitempty"`
+}
+
+func (e keyEnvelope) header() keyEnvelope {
+	return keyEnvelope{Version: e.Version, StoreID: e.StoreID, UnlockMode: e.UnlockMode}
 }
 
 func slotAAD(envelope keyEnvelope, slot keySlot) []byte {
@@ -191,7 +196,8 @@ func slotAAD(envelope keyEnvelope, slot keySlot) []byte {
 		SlotID     []byte
 		Provider   string
 		Parameters KeyParameters
-	}{envelope.Version, envelope.StoreID, slot.ID, slot.Provider, slot.Parameters})
+		UnlockMode UnlockMode `json:",omitempty"`
+	}{envelope.Version, envelope.StoreID, slot.ID, slot.Provider, slot.Parameters, envelope.UnlockMode})
 	return data
 }
 
@@ -257,14 +263,20 @@ func parseEnvelope(data []byte) (keyEnvelope, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return keyEnvelope{}, ErrFormat
 	}
-	if envelope.Version != formatVersion {
+	if envelope.Version != formatVersion && envelope.Version != keyPolicyVersion {
 		return keyEnvelope{}, ErrVersion
+	}
+	if envelope.Version == formatVersion && envelope.UnlockMode != "" || envelope.Version == keyPolicyVersion && !envelope.UnlockMode.valid() {
+		return keyEnvelope{}, ErrFormat
 	}
 	if len(envelope.StoreID) != 16 || len(envelope.Slots) == 0 || len(envelope.Slots) > maxSlots {
 		return keyEnvelope{}, ErrFormat
 	}
 	seen := make(map[string]bool)
 	for _, slot := range envelope.Slots {
+		if envelope.UnlockMode == UnlockPassword && slot.Provider != "password" {
+			return keyEnvelope{}, ErrFormat
+		}
 		if len(slot.ID) != 16 || seen[string(slot.ID)] || slot.Provider == "" || len(slot.Provider) > 64 || len(slot.Nonce) != chacha20poly1305.NonceSizeX || len(slot.Wrapped) != len(Key{})+chacha20poly1305.Overhead {
 			return keyEnvelope{}, ErrFormat
 		}
@@ -327,8 +339,11 @@ func (m *KeyManager) Rewrap(providers ...KeyProvider) error {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	envelope := keyEnvelope{Version: m.envelope.Version, StoreID: m.envelope.StoreID}
+	envelope := m.envelope.header()
 	for _, provider := range providers {
+		if envelope.UnlockMode == UnlockPassword && provider != nil && provider.Name() != "password" {
+			return ErrUnlockMode
+		}
 		slot, err := wrapKeySlot(envelope, m.master, provider)
 		if err != nil {
 			return err
@@ -404,7 +419,7 @@ func (m *KeyManager) ChangePassword(current, password, confirmation []byte, cost
 	if err != nil {
 		return err
 	}
-	envelope := keyEnvelope{Version: m.envelope.Version, StoreID: m.envelope.StoreID}
+	envelope := m.envelope.header()
 	for _, existing := range m.envelope.Slots {
 		if existing.Provider != "password" {
 			envelope.Slots = append(envelope.Slots, existing)

@@ -43,6 +43,8 @@ function harness(state) {
   vm.runInNewContext(source,sandbox);
   return {element,calls,events,timers,redirects,setState:value=>state=value,setReply:value=>reply=value,
     submit:()=>element('storage-form').listeners.submit({preventDefault(){}}),
+    changeMode:value=>{element('storage-unlock-mode').value=value;element('storage-unlock-mode').listeners.change();},
+    submitMode:()=>element('storage-mode-form').listeners.submit({preventDefault(){}}),
     posts:()=>calls.filter(call=>call.options.method==='POST')};
 }
 (async()=>{
@@ -85,6 +87,68 @@ function harness(state) {
   assert.equal(h.element('storage-error').textContent,'storage.error.invalidCurrentPassword');
   h.events.pagehide();
   for(const id of ['storage-current','storage-new','storage-confirm']) assert.equal(h.element(id).value,'');
+
+  h=harness({state:'READY',auto_unlock:true,password_configured:false,progress:{}}); await drain();
+  assert.equal(h.element('storage-form').hidden,false);
+  assert.equal(h.element('storage-current-row').hidden,true);
+  assert.equal(h.element('storage-current').required,false);
+  assert.equal(h.element('storage-state').textContent,'storage.state.readyManaged');
+  assert.equal(h.element('storage-auto-unlock').textContent,'storage.autoUnlock.enabled');
+  h.element('storage-new').value=h.element('storage-confirm').value='placeholder optional';
+  h.setReply({ok:true,value:{state:'READY',auto_unlock:true,password_configured:true,progress:{}}});
+  h.setState({state:'READY',auto_unlock:true,password_configured:true,progress:{}});
+  h.submit(); await drain();
+  assert.equal(h.posts()[0].path,'api/storage/initialize');
+  assert.deepEqual(JSON.parse(h.posts()[0].options.body),{new_password:'placeholder optional',confirm_password:'placeholder optional'});
+  assert.equal(h.element('storage-current-row').hidden,false);
+
+  h=harness({state:'LOCKED',password_configured:true,progress:{},error_code:'system_unlock_failed'}); await drain();
+  h.element('storage-current').value='placeholder recovery';
+  const recovered={state:'READY',password_configured:true,auto_unlock:false,auto_unlock_error:'automatic_unlock_unavailable',progress:{}};
+  h.setReply({ok:true,value:recovered}); h.setState(recovered);
+  h.submit(); await drain();
+  assert.equal(h.element('storage-auto-unlock').textContent,'storage.autoUnlock.unavailable');
+  assert.equal(h.element('storage-error').hidden,true);
+  assert.equal(h.redirects.length,0);
+
+  h=harness({state:'READY',unlock_mode:'automatic',unlock_mode_saved:false,auto_unlock:true,password_configured:false,progress:{}}); await drain();
+  assert.equal(h.element('storage-unlock-mode').value,'automatic');
+  h.changeMode('password');
+  assert.equal(h.element('storage-mode-new-row').hidden,false);
+  assert.equal(h.element('storage-mode-current-row').hidden,true);
+  assert.equal(h.element('storage-mode-new').required,true);
+  assert.equal(h.element('storage-form').hidden,true);
+  await h.timers[0](); await drain();
+  assert.equal(h.element('storage-unlock-mode').value,'password'); // polling preserves an unsaved choice
+  h.element('storage-mode-new').value='placeholder manual'; h.element('storage-mode-confirm').value='mismatch';
+  h.submitMode(); await drain(); assert.equal(h.posts().length,0);
+  h.element('storage-mode-confirm').value='placeholder manual';
+  const manual={state:'READY',unlock_mode:'password',unlock_mode_saved:true,auto_unlock:false,password_configured:true,progress:{}};
+  h.setReply({ok:true,value:manual}); h.setState(manual);
+  h.submitMode(); h.submitMode(); await drain();
+  assert.equal(h.posts().length,1);
+  assert.equal(h.posts()[0].path,'api/storage/unlock-mode');
+  assert.deepEqual(JSON.parse(h.posts()[0].options.body),{unlock_mode:'password',new_password:'placeholder manual',confirm_password:'placeholder manual'});
+  assert.equal(h.element('storage-unlock-mode').value,'password');
+  assert.equal(h.element('storage-mode-new').value,'');
+  assert.equal(h.element('storage-mode-save').disabled,true);
+  assert.equal(h.element('storage-result').textContent,'storage.mode.saved');
+
+  h=harness(manual); await drain(); h.changeMode('automatic');
+  assert.equal(h.element('storage-mode-current-row').hidden,false);
+  assert.equal(h.element('storage-mode-current').required,true);
+  assert.equal(h.element('storage-mode-new-row').hidden,true);
+  h.element('storage-mode-current').value='placeholder manual';
+  h.setReply({ok:false,value:{error:'automatic_unlock_unavailable'}}); h.submitMode(); await drain();
+  assert.deepEqual(JSON.parse(h.posts()[0].options.body),{unlock_mode:'automatic',current_password:'placeholder manual'});
+  assert.equal(h.element('storage-error').textContent,'storage.error.automaticUnlockUnavailable');
+  assert.equal(h.element('storage-unlock-mode').value,'automatic'); // failed selection stays editable
+  h.events.pagehide(); assert.equal(h.element('storage-mode-current').value,'');
+
+  h=harness({state:'LOCKED',unlock_mode:'password',unlock_mode_saved:true,password_configured:true,progress:{}}); await drain();
+  assert.equal(h.element('storage-unlock-mode').value,'password');
+  assert.equal(h.element('storage-unlock-mode').disabled,true);
+  assert.equal(h.element('storage-mode-save').disabled,true);
 })().catch(error=>{console.error(error);process.exit(1);});
 `
 	if err := os.WriteFile(probe, []byte(script), 0600); err != nil {

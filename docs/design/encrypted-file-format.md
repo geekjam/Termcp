@@ -8,12 +8,12 @@
 
 `KeyManager` 随机生成 32 字节数据主密钥和 16 字节 Store ID。
 `master.key` 是有大小限制的 JSON 信封，**只包含封装后的主密钥**；JSON 中的字节数组使用标准 Base64。
-格式版本为 1，包含 `version`、`store_id`、`slots`；最多 8 个 slot，文件最大 64 KiB。
+兼容版本 1，包含 `version`、`store_id`、`slots`；用户保存解锁方式后使用版本 2，增加 `unlock_mode`（`automatic` / `password`）。最多 8 个 slot，文件最大 64 KiB。版本 2 的 `password` 方式仅允许密码 slot。此版本升级仅影响密钥信封，数据文件、事件和 HKDF 仍为版本 1。
 
 每个 slot 包含随机 16 字节 ID、provider 名称、provider 参数、随机 24 字节 nonce 和 48 字节主密钥密文及认证标签。
 封装使用 XChaCha20-Poly1305。AAD 是固定 Go struct 的规范 JSON 编码，字段顺序和名称依次为
-`Version`、`StoreID`、`SlotID`、`Provider`、`Parameters`；不是原始信封的 JSON 字节，也不含其他 slot。
-因此修改 Store ID、slot ID、provider 参数、nonce 或密文都会导致该 slot 解锁失败。
+`Version`、`StoreID`、`SlotID`、`Provider`、`Parameters`；版本 2 在末尾增加 `UnlockMode`，版本 1 完全省略该字段以保持原有 AAD 字节兼容。不是原始信封的 JSON 字节，也不含其他 slot。
+因此修改 Store ID、slot ID、provider 参数、nonce、密文或版本 2 的解锁方式都会导致该 slot 解锁失败。不能通过编辑 JSON 或降级信封版本来绕过密码。
 删除某个完整 slot 属于可用性损失，不承诺借此检测整套文件回滚。
 
 已实现的 provider：
@@ -40,6 +40,7 @@ macOS 通过 `/usr/bin/security -i` 的 stdin 写入秘密；Linux 使用 libsec
 `NewPasswordKeyManager` 检查首次密码确认；`ChangePasswordAndSave` 串行执行当前密码验证、两次新密码核对、重封装和原子保存。
 即使主密钥已在内存中，也不能跳过当前密码验证。重封装保留数据主密钥及非 password slot。
 保存失败且尚未替换文件时，内存和磁盘均保留原 slot；替换完成但目录同步失败时，内存跟随已发布文件，返回 `ErrDurability`，不能确认持久化成功。
+`SetUnlockModeAndSave` 重新验证已有主密码；首次进入手动方式时验证两次新密码。它保留 Store ID 和数据主密钥，用所需 provider 生成版本 2 封装，原子保存策略和 slot。手动方式移除所有自动 slot，自动方式须确认 provider 可用后才发布，并保留密码恢复；保存失败时不退役原方式。系统中的旧孤立 KEK 或旧备份不属于安全擦除保证。
 低层 `ChangePassword` / `Rewrap` 仅修改内存，不可直接作为 HTTP 成功响应的依据。
 
 密码 provider 可在操作后 `Destroy`，清理其保留的密码副本；这不锁定全局存储。

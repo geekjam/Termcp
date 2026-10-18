@@ -37,10 +37,11 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 				return
 			}
 			var input struct {
-				Password        string `json:"password"`
-				CurrentPassword string `json:"current_password"`
-				NewPassword     string `json:"new_password"`
-				ConfirmPassword string `json:"confirm_password"`
+				Password        string                 `json:"password"`
+				CurrentPassword string                 `json:"current_password"`
+				NewPassword     string                 `json:"new_password"`
+				ConfirmPassword string                 `json:"confirm_password"`
+				UnlockMode      encryptedfs.UnlockMode `json:"unlock_mode"`
 			}
 			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
 			decoder.DisallowUnknownFields()
@@ -56,6 +57,10 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 			defer clear(confirmation)
 			var err error
 			success := http.StatusAccepted
+			if operation != "unlock-mode" && input.UnlockMode != "" {
+				respond(w, http.StatusBadRequest, "invalid_request")
+				return
+			}
 			switch operation {
 			case "initialize":
 				if input.Password != "" || input.CurrentPassword != "" {
@@ -76,6 +81,13 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 				}
 				err = controller.ChangePassword(current, next, confirmation)
 				success = http.StatusOK
+			case "unlock-mode":
+				if input.Password != "" {
+					respond(w, http.StatusBadRequest, "invalid_request")
+					return
+				}
+				err = controller.SetUnlockMode(input.UnlockMode, current, next, confirmation)
+				success = http.StatusOK
 			}
 			if err != nil {
 				switch {
@@ -83,7 +95,7 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 					respond(w, http.StatusBadRequest, "password_confirmation_mismatch")
 				case errors.Is(err, encryptedfs.ErrAuthentication):
 					code := "invalid_storage_password"
-					if operation == "password" {
+					if operation == "password" || operation == "unlock-mode" {
 						code = "invalid_current_password"
 					}
 					respond(w, http.StatusForbidden, code)
@@ -95,7 +107,15 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 				case errors.Is(err, encryptedfs.ErrDurability):
 					respond(w, http.StatusServiceUnavailable, "key_save_uncertain")
 				case errors.Is(err, encryptedfs.ErrProviderUnavailable):
-					respond(w, http.StatusBadRequest, "invalid_storage_password")
+					if operation == "unlock-mode" && input.UnlockMode == encryptedfs.UnlockAutomatic {
+						respond(w, http.StatusServiceUnavailable, "automatic_unlock_unavailable")
+					} else {
+						respond(w, http.StatusBadRequest, "invalid_storage_password")
+					}
+				case errors.Is(err, encryptedfs.ErrUnlockMode):
+					respond(w, http.StatusBadRequest, "invalid_unlock_mode")
+				case operation == "unlock-mode" && errors.Is(err, encryptedfs.ErrFormat):
+					respond(w, http.StatusBadRequest, "invalid_request")
 				default:
 					respond(w, http.StatusInternalServerError, "storage_operation_failed")
 				}
@@ -105,7 +125,7 @@ func StorageGateway(controller *securestore.Controller, management *Handler) htt
 		}
 	}
 	csrf := http.NewCrossOriginProtection()
-	for _, operation := range []string{"initialize", "unlock", "password"} {
+	for _, operation := range []string{"initialize", "unlock", "password", "unlock-mode"} {
 		mux.Handle("POST /api/storage/"+operation, csrf.Handler(passwordOperation(operation)))
 	}
 	mux.HandleFunc("GET /api/version", management.handleVersion)

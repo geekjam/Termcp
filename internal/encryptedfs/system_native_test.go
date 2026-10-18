@@ -60,10 +60,19 @@ func nativeSlot(t *testing.T, envelope []byte) encryptedfs.KeyParameters {
 			Parameters encryptedfs.KeyParameters `json:"parameters"`
 		} `json:"slots"`
 	}
-	if err := json.Unmarshal(envelope, &document); err != nil || len(document.Slots) != 1 || document.Slots[0].Provider != encryptedfs.SystemProvider().Name() {
+	if err := json.Unmarshal(envelope, &document); err != nil {
+		t.Fatal("invalid native envelope")
+	}
+	var matches []encryptedfs.KeyParameters
+	for _, slot := range document.Slots {
+		if slot.Provider == encryptedfs.SystemProvider().Name() {
+			matches = append(matches, slot.Parameters)
+		}
+	}
+	if len(matches) != 1 {
 		t.Fatal("native provider did not produce exactly one system slot")
 	}
-	return document.Slots[0].Parameters
+	return matches[0]
 }
 
 func deleteNativeCredential(t *testing.T, params encryptedfs.KeyParameters) {
@@ -239,7 +248,7 @@ func TestSystemProviderNativeRejectsUnavailableOrDamagedCredentials(t *testing.T
 func TestSystemProviderNativeControllerRestart(t *testing.T) {
 	requireNativeFixture(t)
 	t.Setenv(encryptedfs.EnvStorageKEK, "")
-	t.Setenv("TERMCP_STORAGE_KEY_PROVIDER", "system")
+	t.Setenv("TERMCP_STORAGE_KEY_PROVIDER", "")
 	root := t.TempDir()
 	derived := make(chan encryptedfs.Key, 1)
 	activate := func(keys *encryptedfs.KeyManager) (http.Handler, io.Closer, error) {
@@ -344,5 +353,147 @@ func TestSystemProviderNativeControllerRestart(t *testing.T) {
 	after, err := os.ReadFile(filepath.Join(root, "keys", "master.key"))
 	if err != nil || !bytes.Equal(envelope, after) {
 		t.Fatal("native bootstrap changed the existing key envelope")
+	}
+}
+
+func TestSystemProviderNativeOptionalPasswordKeepsAutomaticRestart(t *testing.T) {
+	requireNativeFixture(t)
+	t.Setenv(encryptedfs.EnvStorageKEK, "")
+	t.Setenv("TERMCP_STORAGE_KEY_PROVIDER", "")
+	root := t.TempDir()
+	derived := make(chan encryptedfs.Key, 1)
+	activate := func(keys *encryptedfs.KeyManager) (http.Handler, io.Closer, error) {
+		key, err := keys.Derive("native-test", nativeIdentity)
+		if err != nil {
+			return nil, nil, err
+		}
+		derived <- key
+		return http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), nil, nil
+	}
+	open := func() *securestore.Controller {
+		t.Helper()
+		controller, err := securestore.Open(root, activate)
+		if err != nil {
+			t.Fatal("default native bootstrap failed")
+		}
+		t.Cleanup(func() { _ = controller.Close() })
+		deadline := time.NewTimer(30 * time.Second)
+		defer deadline.Stop()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			status := controller.Status()
+			if status.State == securestore.Ready && status.AutoUnlock && controller.Handler() != nil {
+				return controller
+			}
+			if status.ErrorCode != "" || status.State == securestore.Failed {
+				t.Fatal("default storage did not automatically unlock")
+			}
+			select {
+			case <-ticker.C:
+			case <-deadline.C:
+				t.Fatal("default native bootstrap timed out")
+			}
+		}
+	}
+	controller := open()
+	want := <-derived
+	defer clear(want[:])
+	envelope, err := os.ReadFile(filepath.Join(root, "keys", "master.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeCredentialCleanup(t, nativeSlot(t, envelope))
+	if controller.Status().PasswordConfigured {
+		t.Fatal("default native storage invented a password")
+	}
+	oldKey, err := encryptedfs.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(oldKey[:])
+	newKey, err := encryptedfs.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(newKey[:])
+	password := []byte(base64.StdEncoding.EncodeToString(oldKey[:]))
+	next := []byte(base64.StdEncoding.EncodeToString(newKey[:]))
+	defer clear(password)
+	defer clear(next)
+	if err := controller.Initialize(password, password); err != nil {
+		t.Fatal("default hosted store could not add its first optional password")
+	}
+	if err := controller.ChangePassword([]byte("incorrect placeholder"), next, next); !errors.Is(err, encryptedfs.ErrAuthentication) {
+		t.Fatal("automatic native unlock bypassed password proof")
+	}
+	if err := controller.ChangePassword(password, next, next); err != nil {
+		t.Fatal("optional password could not be changed")
+	}
+	if err := controller.Close(); err != nil {
+		t.Fatal(err)
+	}
+	controller = open()
+	got := <-derived
+	defer clear(got[:])
+	if !controller.Status().PasswordConfigured || got != want {
+		t.Fatal("optional password setup or rotation changed the master key or native startup")
+	}
+	loaded, err := encryptedfs.LoadKeyManager(filepath.Join(root, "keys", "master.key"), encryptedfs.SystemProvider())
+	if err != nil || !loaded.HasProvider("password") {
+		t.Fatal("optional password discarded native credential hosting")
+	}
+	if err := controller.SetUnlockMode(encryptedfs.UnlockPassword, next, nil, nil); err != nil {
+		t.Fatal("native store could not select manual startup")
+	}
+	if err := controller.Close(); err != nil {
+		t.Fatal(err)
+	}
+	manual, err := securestore.Open(root, activate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manual.Close() })
+	if status := manual.Status(); status.State != securestore.Locked || status.AutoUnlock || status.UnlockMode != encryptedfs.UnlockPassword {
+		t.Fatal("native service ignored a saved manual selection")
+	}
+	if err := manual.Unlock(next); err != nil {
+		t.Fatal("native store could not recover with the selected password")
+	}
+	deadline := time.NewTimer(30 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for manual.Status().State != securestore.Ready {
+		if status := manual.Status(); status.State == securestore.Failed || status.ErrorCode != "" {
+			t.Fatal("manual native restart failed recovery")
+		}
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			t.Fatal("manual native restart timed out")
+		}
+	}
+	manualKey := <-derived
+	if manualKey != want || manual.Status().AutoUnlock {
+		t.Fatal("manual unlock changed data or silently restored automatic hosting")
+	}
+	clear(manualKey[:])
+	if err := manual.SetUnlockMode(encryptedfs.UnlockAutomatic, next, nil, nil); err != nil {
+		t.Fatal("native automatic startup could not be restored")
+	}
+	envelope, err = os.ReadFile(filepath.Join(root, "keys", "master.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nativeCredentialCleanup(t, nativeSlot(t, envelope))
+	if err := manual.Close(); err != nil {
+		t.Fatal(err)
+	}
+	controller = open()
+	restored := <-derived
+	defer clear(restored[:])
+	if restored != want || controller.Status().UnlockMode != encryptedfs.UnlockAutomatic {
+		t.Fatal("selected automatic mode did not restart with existing data")
 	}
 }

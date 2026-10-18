@@ -3,6 +3,7 @@ package webui
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -164,6 +165,60 @@ func TestStorageAPIAuthBootstrapAndPasswordRotation(t *testing.T) {
 		t.Fatalf("unlock=%d %s", rr.Code, rr.Body.String())
 	}
 	waitStorageAPI(t, controller)
+}
+
+func TestManagedStorageAPICanSetFirstPasswordAndStillRestartAutomatically(t *testing.T) {
+	key, err := encryptedfs.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(encryptedfs.EnvStorageKEK, base64.StdEncoding.EncodeToString(key[:]))
+	root := t.TempDir()
+	options := securestore.Options{PasswordCost: encryptedfs.Argon2Parameters{Time: 1, Memory: 8 * 1024, Threads: 1}}
+	controller, err := securestore.OpenWithOptions(root, nil, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	waitStorageAPI(t, controller)
+	handler := StorageGateway(controller, &Handler{})
+	request := func(path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://termcp.invalid"+path, strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:34567"
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		return rr
+	}
+	if rr := request("/api/storage/initialize", `{"new_password":"placeholder optional","confirm_password":"mismatch"}`); rr.Code != 400 {
+		t.Fatal("managed setup bypassed confirmation")
+	}
+	initial := `{"new_password":"placeholder optional","confirm_password":"placeholder optional"}`
+	if rr := request("/api/storage/initialize", initial); rr.Code != 202 || !strings.Contains(rr.Body.String(), `"auto_unlock":true`) || !strings.Contains(rr.Body.String(), `"password_configured":true`) {
+		t.Fatal("managed store could not add its first password")
+	}
+	if rr := request("/api/storage/initialize", initial); rr.Code != 409 {
+		t.Fatal("optional first setup replaced an existing password")
+	}
+	if rr := request("/api/storage/password", `{"current_password":"incorrect placeholder","new_password":"placeholder next","confirm_password":"placeholder next"}`); rr.Code != 403 {
+		t.Fatal("managed storage bypassed current-password authentication")
+	}
+	if rr := request("/api/storage/password", `{"current_password":"placeholder optional","new_password":"placeholder next","confirm_password":"placeholder next"}`); rr.Code != 200 {
+		t.Fatal("managed store could not change its optional password")
+	}
+	if err := controller.Close(); err != nil {
+		t.Fatal(err)
+	}
+	controller, err = securestore.OpenWithOptions(root, nil, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	waitStorageAPI(t, controller)
+	if !controller.Status().AutoUnlock || !controller.Status().PasswordConfigured {
+		t.Fatal("optional password disabled automatic restart")
+	}
 }
 
 func TestStorageAPIBoundsAndNoPasswordEcho(t *testing.T) {

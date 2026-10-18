@@ -355,7 +355,6 @@ func runServer(cfg *config.Config, idleTimeoutArg string, idleTimeout time.Durat
 		lan = nonLoopbackUnicastIPv4s()
 	}
 	logHTTPMain(base, cfg.Port, lan)
-	slog.Info("Storage setup and unlock: " + base + "/storage.html")
 	if verifier != nil {
 		slog.Info("HTTP authentication enabled")
 	} else if cfg.DisableAuth {

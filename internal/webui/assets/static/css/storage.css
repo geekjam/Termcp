@@ -3,7 +3,9 @@
 .storage-panel p { line-height: 1.65; }
 .storage-panel form { display: grid; gap: 1rem; margin: 1.5rem 0; }
 .storage-panel label { display: grid; gap: .4rem; }
-.storage-panel input { width: 100%; box-sizing: border-box; padding: .65rem .75rem; font: inherit; }
+.storage-panel input, .storage-panel select { width: 100%; box-sizing: border-box; padding: .65rem .75rem; font: inherit; }
+#storage-mode-form { padding-bottom: 1.5rem; border-bottom: 1px solid currentColor; }
+#storage-mode-hint { margin: 0; }
 .storage-panel button { padding: .65rem 1rem; font: inherit; cursor: pointer; }
 .storage-panel button:disabled { cursor: wait; opacity: .6; }
 .storage-notice { border-left: 3px solid currentColor; padding: .65rem 1rem; }

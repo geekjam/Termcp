@@ -179,13 +179,14 @@ storage. HTTP authentication applies independently of the storage password.
 
 | Method and path | JSON fields | Result |
 |-----------------|-------------|--------|
-| `GET /api/storage/status` | none | `state`, `password_configured`, `legacy_found`, `progress`, optional `error_code` |
-| `POST /api/storage/initialize` | `new_password`, `confirm_password` | 202; only an uninitialized store can generate a new random master key |
-| `POST /api/storage/unlock` | `password` | 202; unlocks an existing password slot and starts migration/recovery |
+| `GET /api/storage/status` | none | `state`, `password_configured`, `unlock_mode`, `unlock_mode_saved`, `auto_unlock`, `legacy_found`, `progress`, optional `error_code` and `auto_unlock_error` |
+| `POST /api/storage/initialize` | `new_password`, `confirm_password` | 202; creates a master key only for an uninitialized store, or adds the first optional password to a READY/CLEANUP_PENDING store already unlocked through system/ENV hosting; never replaces an existing password |
+| `POST /api/storage/unlock` | `password` | 202; unlocks an existing password slot, enrolls configured hosting only in automatic mode, and starts migration/recovery |
 | `POST /api/storage/password` | `current_password`, `new_password`, `confirm_password` | 200 only after the replacement envelope is durably saved; current-password proof is required even while unlocked |
+| `POST /api/storage/unlock-mode` | `unlock_mode` (`automatic` / `password`); `current_password` if configured, otherwise `new_password` and `confirm_password` for first manual setup | 200 only after policy and slots are durably saved together; requires READY/CLEANUP_PENDING and retains the data master key |
 
 Passwords are accepted only in `application/json` bodies (16 KiB maximum), never
-URLs. Unknown fields and trailing JSON are rejected. The three password operations
+URLs. Unknown fields and trailing JSON are rejected. The four storage operations
 share a five-attempts-per-minute limit per process, including successful attempts.
 Remote password operations require TLS or a proxy source explicitly trusted via
 `TERMCP_STORAGE_TRUSTED_PROXIES` with `X-Forwarded-Proto: https`; loopback HTTP is
@@ -204,8 +205,28 @@ without logging out HTTP authentication; incompatible state returns 409; rate
 limits return 429 with `Retry-After`; unsafe password transport returns 426.
 `key_save_uncertain` (503) means publication happened but durability could not be
 confirmed: retain both passwords and verify after resolving the filesystem issue.
-There is no runtime lock endpoint. ENV/system-only stores do not acquire a default
-password or accept password initialization over their existing master key.
+There is no runtime lock endpoint. System hosting is the default: first startup
+creates a system-protected random master key, and subsequent starts unlock
+automatically. An explicitly saved unlock method takes precedence over deployment
+defaults; within automatic mode, nonempty `TERMCP_STORAGE_KEK` selects ENV hosting.
+ENV/system stores have no preset password; the initialize endpoint can add their
+first optional recovery password after automatic unlock and recovery. Password
+changes always require current-password proof and retain automatic hosting.
+In automatic mode, existing password-only stores require one successful password
+unlock to enroll hosting. Saved manual mode skips system/ENV unlock on every
+restart and does not re-enroll hosting after password unlock. Switching methods
+requires current-password proof when a password exists, or two matching new
+passwords when choosing manual mode for the first time. Manual mode removes all
+automatic slots; automatic mode first verifies provider availability. Policy and
+slots use a single authenticated version-2 key envelope, retaining version-1
+data files and compatibility when reading legacy key envelopes. Saving fails
+with 503 `automatic_unlock_unavailable` if hosting is unavailable, leaving the
+previous method intact; an invalid method returns 400 `invalid_unlock_mode`. If enrollment fails, storage remains usable with password recovery and
+`auto_unlock_error: "automatic_unlock_unavailable"`; the UI warns that a password
+will be needed after restart. `auto_unlock` is true only after successful use or
+persistence of a usable automatic-unlock slot. Containers without a native key
+service need ENV hosting for unattended restart. Explicit
+`TERMCP_STORAGE_KEY_PROVIDER=password` (without ENV) retains manual unlock.
 
 ## 4. Connection profiles
 

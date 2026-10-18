@@ -89,7 +89,9 @@ restored copy has none.
 
 The `system-key-store` CI matrix separately runs real Windows DPAPI, macOS
 Keychain and Linux Secret Service tests with `-race`. It checks fresh-process
-decryption, system-mode bootstrap/restart, and rejection of missing, malformed
+decryption, default system-hosted bootstrap/restart, optional password setup and
+rotation without losing automatic unlock, saved manual startup and switching
+back to automatic hosting, and rejection of missing, malformed
 or replaced credentials (or a damaged DPAPI blob), without changing the stored
 master-key envelope. An unavailable backend is a failure in this job.
 

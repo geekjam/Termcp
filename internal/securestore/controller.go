@@ -35,11 +35,15 @@ var (
 )
 
 type Status struct {
-	State              State    `json:"state"`
-	PasswordConfigured bool     `json:"password_configured"`
-	LegacyFound        bool     `json:"legacy_found"`
-	Progress           Progress `json:"progress"`
-	ErrorCode          string   `json:"error_code,omitempty"`
+	State              State                  `json:"state"`
+	PasswordConfigured bool                   `json:"password_configured"`
+	UnlockMode         encryptedfs.UnlockMode `json:"unlock_mode"`
+	UnlockModeSaved    bool                   `json:"unlock_mode_saved"`
+	AutoUnlock         bool                   `json:"auto_unlock"`
+	AutoUnlockError    string                 `json:"auto_unlock_error,omitempty"`
+	LegacyFound        bool                   `json:"legacy_found"`
+	Progress           Progress               `json:"progress"`
+	ErrorCode          string                 `json:"error_code,omitempty"`
 }
 
 // Activate builds the business graph only after migration and recovery. The
@@ -51,36 +55,40 @@ type Options struct {
 	PasswordCost     encryptedfs.Argon2Parameters
 	SystemProvider   encryptedfs.KeyProvider
 	InitializeSystem bool
+	RequirePassword  bool
 }
 
 type Controller struct {
-	op       sync.Mutex
-	mu       sync.RWMutex
-	root     string
-	lock     *encryptedfs.DirectoryLock
-	keys     *encryptedfs.KeyManager
-	status   Status
-	handler  http.Handler
-	closer   io.Closer
-	activate Activate
-	cost     encryptedfs.Argon2Parameters
-	ctx      context.Context
-	cancel   context.CancelFunc
-	jobs     sync.WaitGroup
-	closing  bool
-	window   time.Time
-	attempts int
+	op           sync.Mutex
+	mu           sync.RWMutex
+	root         string
+	lock         *encryptedfs.DirectoryLock
+	keys         *encryptedfs.KeyManager
+	status       Status
+	handler      http.Handler
+	closer       io.Closer
+	activate     Activate
+	cost         encryptedfs.Argon2Parameters
+	autoProvider encryptedfs.KeyProvider
+	ctx          context.Context
+	cancel       context.CancelFunc
+	jobs         sync.WaitGroup
+	closing      bool
+	window       time.Time
+	attempts     int
 }
 
 func Open(root string, activate Activate) (*Controller, error) {
 	options := Options{}
 	switch os.Getenv("TERMCP_STORAGE_KEY_PROVIDER") {
-	case "", "password":
+	case "password":
+		options.RequirePassword = true
+		options.SystemProvider = encryptedfs.SystemProvider()
 	case "env":
 		if os.Getenv(encryptedfs.EnvStorageKEK) == "" {
 			return nil, encryptedfs.ErrProviderUnavailable
 		}
-	case "system":
+	case "", "system":
 		options.SystemProvider = encryptedfs.SystemProvider()
 		options.InitializeSystem = true
 	default:
@@ -104,7 +112,14 @@ func OpenWithOptions(root string, activate Activate, options Options) (*Controll
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Controller{root: abs, lock: lock, activate: activate, cost: options.PasswordCost, ctx: ctx, cancel: cancel, status: Status{State: Uninitialized}}
+	c := &Controller{root: abs, lock: lock, activate: activate, cost: options.PasswordCost, autoProvider: options.SystemProvider, ctx: ctx, cancel: cancel, status: Status{State: Uninitialized}}
+	c.status.UnlockMode = encryptedfs.UnlockAutomatic
+	if value := os.Getenv(encryptedfs.EnvStorageKEK); value != "" {
+		c.autoProvider = encryptedfs.EnvProvider{}
+	} else if options.RequirePassword {
+		c.status.UnlockMode = encryptedfs.UnlockPassword
+	}
+	var systemSlot bool
 	_, err = os.Stat(c.keyPath())
 	if err == nil {
 		c.status.State = Locked
@@ -115,6 +130,16 @@ func OpenWithOptions(root string, activate Activate, options Options) (*Controll
 		}
 		for _, name := range providers {
 			c.status.PasswordConfigured = c.status.PasswordConfigured || name == "password"
+			systemSlot = systemSlot || options.SystemProvider != nil && name == options.SystemProvider.Name()
+		}
+		mode, modeErr := encryptedfs.ReadUnlockMode(c.keyPath())
+		if modeErr != nil {
+			_ = c.Close()
+			return nil, modeErr
+		}
+		if mode != "" {
+			c.status.UnlockMode = mode
+			c.status.UnlockModeSaved = true
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		_ = c.Close()
@@ -156,9 +181,13 @@ func OpenWithOptions(root string, activate Activate, options Options) (*Controll
 	if c.status.LegacyFound {
 		slog.Warn("检测到旧版持久化文件；完成密钥设置或解锁后将迁移为加密存储。迁移期间服务暂不可用，请确保旧进程已停止并已备份数据目录")
 	}
+	if c.status.UnlockMode == encryptedfs.UnlockPassword {
+		return c, nil
+	}
 	if value, set := os.LookupEnv(encryptedfs.EnvStorageKEK); set && value != "" {
 		_ = value // never retain or log the environment secret
 		provider := encryptedfs.EnvProvider{}
+		c.autoProvider = provider
 		var keys *encryptedfs.KeyManager
 		if c.status.State == Uninitialized {
 			keys, err = encryptedfs.NewKeyManager(provider)
@@ -177,9 +206,10 @@ func OpenWithOptions(root string, activate Activate, options Options) (*Controll
 				c.status.State = Locked
 			}
 		} else {
+			c.status.AutoUnlock = true
 			c.begin(keys)
 		}
-	} else if provider := options.SystemProvider; provider != nil && (c.status.State == Locked || options.InitializeSystem) {
+	} else if provider := options.SystemProvider; provider != nil && (systemSlot || c.status.State == Uninitialized && options.InitializeSystem) {
 		var keys *encryptedfs.KeyManager
 		if c.status.State == Uninitialized {
 			keys, err = encryptedfs.NewKeyManager(provider)
@@ -198,6 +228,7 @@ func OpenWithOptions(root string, activate Activate, options Options) (*Controll
 				c.status.State = Locked
 			}
 		} else {
+			c.status.AutoUnlock = true
 			c.begin(keys)
 		}
 	}
@@ -235,10 +266,25 @@ func (c *Controller) attempt() error {
 func (c *Controller) Initialize(password, confirmation []byte) error {
 	c.op.Lock()
 	defer c.op.Unlock()
-	if c.Status().State != Uninitialized {
+	status := c.Status()
+	managedSetup := (status.State == Ready || status.State == CleanupPending) && status.AutoUnlock && !status.PasswordConfigured
+	if status.State != Uninitialized && !managedSetup {
 		return ErrState
 	}
 	if err := c.attempt(); err != nil {
+		return err
+	}
+	if managedSetup {
+		err := c.keys.AddPasswordAndSave(c.keyPath(), password, confirmation, c.cost)
+		if err == nil || errors.Is(err, encryptedfs.ErrDurability) {
+			c.mu.Lock()
+			c.status.PasswordConfigured = true
+			c.status.ErrorCode = ""
+			if err != nil {
+				c.status.ErrorCode = "key_save_uncertain"
+			}
+			c.mu.Unlock()
+		}
 		return err
 	}
 	keys, err := encryptedfs.NewPasswordKeyManager(password, confirmation, c.cost)
@@ -257,8 +303,12 @@ func (c *Controller) Initialize(password, confirmation []byte) error {
 		if _, statErr := os.Stat(c.keyPath()); statErr == nil {
 			c.mu.Lock()
 			c.status.State, c.status.ErrorCode = Locked, "key_save_uncertain"
+			c.status.PasswordConfigured = true
 			c.mu.Unlock()
 		}
+		return err
+	}
+	if err := c.rememberUnlock(keys); err != nil {
 		return err
 	}
 	c.begin(keys)
@@ -284,8 +334,67 @@ func (c *Controller) Unlock(password []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := c.rememberUnlock(keys); err != nil {
+		return err
+	}
 	c.begin(keys)
 	return nil
+}
+
+// Password proof (or first setup) precedes enrollment. Losing native credentials
+// therefore never creates a new data key or overwrites the password recovery slot.
+func (c *Controller) rememberUnlock(keys *encryptedfs.KeyManager) error {
+	if c.autoProvider == nil || c.Status().UnlockMode == encryptedfs.UnlockPassword {
+		return nil
+	}
+	err := keys.EnsureAutoUnlockAndSave(c.keyPath(), c.autoProvider)
+	c.mu.Lock()
+	c.status.AutoUnlock = err == nil
+	c.status.AutoUnlockError = ""
+	if err != nil {
+		c.status.AutoUnlockError = "automatic_unlock_unavailable"
+	}
+	if errors.Is(err, encryptedfs.ErrDurability) {
+		c.status.State, c.status.ErrorCode = Locked, "key_save_uncertain"
+		c.status.PasswordConfigured = keys.HasProvider("password")
+	}
+	c.mu.Unlock()
+	if errors.Is(err, encryptedfs.ErrDurability) {
+		return err
+	}
+	if err != nil {
+		slog.Warn("自动解锁密钥托管未完成；当前可继续使用，重启后需输入主密码。无桌面服务的部署可配置 TERMCP_STORAGE_KEK")
+	}
+	return nil
+}
+
+func (c *Controller) SetUnlockMode(mode encryptedfs.UnlockMode, current, password, confirmation []byte) error {
+	c.op.Lock()
+	defer c.op.Unlock()
+	state := c.Status().State
+	if state != Ready && state != CleanupPending {
+		return ErrState
+	}
+	if err := c.attempt(); err != nil {
+		return err
+	}
+	err := c.keys.SetUnlockModeAndSave(c.keyPath(), encryptedfs.UnlockModeOptions{
+		Mode: mode, CurrentPassword: current, NewPassword: password, Confirmation: confirmation,
+		PasswordCost: c.cost, AutomaticProvider: c.autoProvider,
+	})
+	if err == nil || errors.Is(err, encryptedfs.ErrDurability) {
+		c.mu.Lock()
+		c.status.UnlockMode = c.keys.UnlockMode()
+		c.status.UnlockModeSaved = true
+		c.status.PasswordConfigured = c.keys.HasProvider("password")
+		c.status.AutoUnlock = mode == encryptedfs.UnlockAutomatic && err == nil
+		c.status.AutoUnlockError, c.status.ErrorCode = "", ""
+		if err != nil {
+			c.status.ErrorCode = "key_save_uncertain"
+		}
+		c.mu.Unlock()
+	}
+	return err
 }
 
 func (c *Controller) ChangePassword(current, password, confirmation []byte) error {
@@ -319,12 +428,14 @@ func (c *Controller) begin(keys *encryptedfs.KeyManager) {
 	c.jobs.Add(1)
 	go func() {
 		defer c.jobs.Done()
+		migrated := false
 		pending, err := Prepare(c.ctx, c.root, keys, func(progress Progress) {
 			c.mu.Lock()
 			changed := c.status.Progress.Stage != progress.Stage
+			migrated = migrated || c.status.LegacyFound || progress.Total > 0
 			c.status.State, c.status.Progress = Migrating, progress
 			c.mu.Unlock()
-			if changed {
+			if changed && migrated {
 				slog.Info("encrypted storage migration", "stage", progress.Stage, "resuming", progress.Resuming)
 			}
 		})
@@ -365,9 +476,9 @@ func (c *Controller) begin(keys *encryptedfs.KeyManager) {
 		}
 		c.mu.Unlock()
 		if pending {
-			slog.Warn("CLEANUP_PENDING：加密存储已可用，但仍有旧明文未完成清理")
-		} else {
-			slog.Info("加密存储已就绪；历史迁移、验证及明文清理完成")
+			slog.Warn("CLEANUP_PENDING：旧版明文文件清理尚未完成")
+		} else if migrated {
+			slog.Info("旧版持久化文件迁移及明文清理完成")
 		}
 	}()
 }

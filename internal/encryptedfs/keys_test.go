@@ -115,7 +115,7 @@ func TestKeyEnvelopeRejectsTamperingAndUnboundedKDF(t *testing.T) {
 		{"salt", func(e *keyEnvelope) { e.Slots[0].Parameters.Salt[0] ^= 1 }, ErrAuthentication},
 		{"nonce", func(e *keyEnvelope) { e.Slots[0].Nonce[0] ^= 1 }, ErrAuthentication},
 		{"wrapped key", func(e *keyEnvelope) { e.Slots[0].Wrapped[0] ^= 1 }, ErrAuthentication},
-		{"version", func(e *keyEnvelope) { e.Version++ }, ErrVersion},
+		{"version", func(e *keyEnvelope) { e.Version = 99 }, ErrVersion},
 		{"memory bound", func(e *keyEnvelope) { e.Slots[0].Parameters.KDF.Memory = ^uint32(0) }, ErrFormat},
 		{"CPU bound", func(e *keyEnvelope) { e.Slots[0].Parameters.KDF.Time = ^uint32(0) }, ErrFormat},
 		{"parallelism bound", func(e *keyEnvelope) { e.Slots[0].Parameters.KDF.Threads = 255 }, ErrFormat},

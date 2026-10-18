@@ -989,6 +989,44 @@
     }
     .donors-empty { font-family: var(--mono); font-size: 13.5px; color: var(--text-faint); }
 
+    /* Under the credits: the community group code. The JPEG is re-encoded from
+       the QR payload alone, so no avatar or caption from the original ships. */
+    .join {
+      margin-top: 30px;
+      padding-top: 26px;
+      border-top: 1px solid var(--border);
+    }
+    .join-group { margin: 0; }
+    .join-title {
+      margin-bottom: 12px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+    .join-qr { margin: 0; text-align: center; width: fit-content; }
+    .join-qr a {
+      display: block;
+      padding: 6px;
+      background: #fff;
+      line-height: 0;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .join-qr a:hover { border-color: var(--border-bright); box-shadow: 0 0 16px var(--accent-dim); }
+    .join-qr img { display: block; width: 180px; height: 180px; }
+    .join-qr figcaption {
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+    .join-num { color: var(--text-bright); }
+    @media (max-width: 640px) {
+      .join-qr img { width: 150px; height: 150px; }
+    }
+
     /* Footer */
     footer {
       border-top: 1px solid var(--border);
@@ -1366,7 +1404,24 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         <p class="sec-sub" data-i18n="donors_sub">人类和 AI 的捐赠者与维护者。</p>
       </div>
       <div class="donors" id="donor-list"></div>
+
+      <!-- Community group code, under the credits. The JPEG is re-encoded
+           from the QR payload alone (QQ join link), so the original's avatar
+           and captions are not published. -->
+      <div class="join">
+        <figure class="join-group">
+          <div class="join-title" data-i18n="join_group">加 Q 群</div>
+          <figure class="join-qr big">
+            <a href="qr-qq.jpg" target="_blank" rel="noopener">
+              <img src="qr-qq.jpg" width="280" height="280" loading="lazy" decoding="async"
+                   data-i18n-alt="join_qq_alt" alt="Termcp 交流群二维码，群号 215902473">
+            </a>
+            <figcaption data-i18n-html="join_qq_cap"><span class="join-num">215902473</span></figcaption>
+          </figure>
+        </figure>
+      </div>
     </section>
+
   </main>
 
   <footer>
@@ -1799,7 +1854,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         donors_empty: '名单待更新',
         donor_human: '人类捐赠者 / 维护者',
         donor_agent: 'AI 捐赠者 / 维护者',
-        donor_hint: '让这个项目继续跑下去'
+        donor_hint: '让这个项目继续跑下去',
+        join_group: '加 Q 群',
+        join_qq_alt: 'Termcp 交流群二维码，群号 215902473',
+        join_qq_cap: '群号 <span class="join-num">215902473</span>',
       },
       'zh-TW': {
         auto_label: '🌐 自動',
@@ -1910,7 +1968,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         donors_empty: '名單待更新',
         donor_human: '人類捐贈者 / 維護者',
         donor_agent: 'AI 捐贈者 / 維護者',
-        donor_hint: '讓這個專案繼續走下去'
+        donor_hint: '讓這個專案繼續走下去',
+        join_group: '加 Q 群',
+        join_qq_alt: 'Termcp 交流群二維碼，群號 215902473',
+        join_qq_cap: '群號 <span class="join-num">215902473</span>',
       },
       'en': {
         auto_label: '🌐 Auto',
@@ -2021,7 +2082,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         donors_empty: 'No donors yet',
         donor_human: 'Human donor / maintainer',
         donor_agent: 'AI donor / maintainer',
-        donor_hint: 'Keeps this project running'
+        donor_hint: 'Keeps this project running',
+        join_group: 'Join the QQ group',
+        join_qq_alt: 'Termcp community group QR code, group 215902473',
+        join_qq_cap: 'Group <span class="join-num">215902473</span>',
       }
     };
 

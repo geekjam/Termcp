@@ -1,7 +1,6 @@
 package webui
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -81,32 +80,45 @@ func TestSessionSwitcherUsesOneDataSource(t *testing.T) {
 // The switch menu hangs off the monitor glyph in the terminal header, and only
 // on touch devices: on desktop the session tab bar already switches sessions, so
 // clicking the glyph must do nothing there.
-func TestSwitcherHangsOffTheHeaderIconOnTouchOnly(t *testing.T) {
+// TestTheHeaderGlyphTicksTheWindow pins what the monitor glyph does now.
+//
+// It used to be two things at once: decoration on desktop (a drawing that did
+// nothing when pressed) and, on touch, a menu of the server's sessions. Both were
+// wrong for the same reason — a monitor glyph reads as "this screen", so the one
+// action it suggests is picking it. The dock's tick already existed for that, so
+// the glyph drives the same component: two views of one control rather than a
+// second control with its own meaning.
+//
+// The mobile menu is gone with it. It listed sessions that had no window here, but
+// raising a window is a click on its dock tab, so the menu cost a hidden meaning on
+// a picture of a screen and bought a list the dock already shows.
+func TestTheHeaderGlyphTicksTheWindow(t *testing.T) {
 	termView := readTerminalJS(t)
 	setup := between(t, termView, "function setupMobileSessionSwitcher", "\n}\n")
 
 	if !strings.Contains(setup, ".shell-header-icon") {
-		t.Error("the switcher should bind to the existing header monitor glyph")
+		t.Error("the tick binds to the existing header monitor glyph")
 	}
-	// Every activation path must be gated on touch, or desktop gets a menu it did
-	// not ask for (and a tab bar it already has).
-	if strings.Count(setup, "isMobileViewport()") < 2 {
-		t.Error("both the affordance and the click handler must check isMobileViewport()")
+	// It drives the dock's selection, which is what makes the glyph and the dock's
+	// own tick the same control.
+	if !strings.Contains(setup, "_dockBatch.toggleSelection") {
+		t.Error("the glyph must tick through the shared batch component, not its own set")
 	}
-
-	// The old standalone hamburger must be gone.
-	css := readAppCSS(t)
-	if strings.Contains(css, ".shell-window-switch-btn") || strings.Contains(termView, "shell-window-switch-btn") {
-		t.Error("the standalone switch button should be replaced by the header glyph")
+	// No viewport gate: the glyph means one thing everywhere. A gate here would be
+	// the old bug — decoration on desktop, action on touch.
+	if strings.Contains(setup, "isMobileViewport()") {
+		t.Error("the glyph must not change meaning by viewport; it is a tick everywhere")
 	}
-
-	// And the freed-up slot opens the connections drawer instead.
-	if !strings.Contains(setup, "termcpToggleEntriesDrawer") {
-		t.Error("a header button should open the entries drawer")
+	// And no menu: the function that drew it is gone, so a leftover call would be a
+	// runtime error rather than a feature.
+	if strings.Contains(termView, "function openSessionSwitchMenu(") {
+		t.Error("the session-switch menu is gone; the dock lists the windows")
 	}
-	connForm := readAssetLF(t, "static/js/conn-form.js")
-	if !strings.Contains(connForm, "window.termcpToggleEntriesDrawer") {
-		t.Error("conn-form.js should expose the drawer toggle for the terminal header")
+	if strings.Contains(termView, "openSessionSwitchMenu(") {
+		t.Error("nothing may call openSessionSwitchMenu: the function no longer exists")
+	}
+	if !strings.Contains(termView, "win.aria.select") {
+		t.Error("the glyph needs an accessible name describing the tick")
 	}
 }
 
@@ -217,16 +229,23 @@ func TestFullscreenZIndexIsHandedOverNotIncremented(t *testing.T) {
 		t.Error("the full-screen z-index must not be an incrementing counter")
 	}
 
-	// The constant has to sit between the tab bar and the drawer, or the
-	// terminal hides the drawer (or sinks behind the tab bar).
+	// The constant has to sit between the dock and the drawer, or the terminal
+	// hides the drawer (or sinks behind the dock). The dock is what the floating
+	// tab bar became: it is pinned to the viewport bottom, so the full-screen
+	// window must still paint over it.
 	css := readAppCSS(t)
 	full := between(t, css, ".shell-window.win-fullscreen {", "}")
 	if !strings.Contains(full, "z-index: 21000") {
 		t.Errorf("the stylesheet full-screen z-index should be 21000; got %q", strings.TrimSpace(full))
 	}
-	tabbar := between(t, css, ".session-tabbar {", "}")
-	if !strings.Contains(tabbar, "z-index: 20000") {
-		t.Error("the tab bar should stay below the full-screen window")
+	// The dock's stacking is declared in workspace.css beside the rest of its
+	// geometry. Read that sheet rather than the bundle: terminal.css also carries
+	// a `.sessdock` rule (the mobile hide), and the bundle concatenates in
+	// manifest order, so a bare lookup would land on the wrong one.
+	workspaceCSS := readAssetLF(t, "static/css/workspace.css")
+	dock := between(t, workspaceCSS, ".sessdock {", "}")
+	if !strings.Contains(dock, "z-index: 20000") {
+		t.Error("the dock should stay below the full-screen window")
 	}
 }
 
@@ -445,8 +464,8 @@ func TestLoadBannerShowsDismissButtonInAFlexRow(t *testing.T) {
 	// the assertion would only ever see empty markup.
 	index := readAssetLF(t, "index.html")
 	for _, tc := range []struct{ name, banner, from, to string }{
-		{"connections", "conn-load-banner", `id="sec-entries-body"`, `id="sec-sessions"`},
-		{"sessions", "session-load-banner", `id="sec-sessions-body"`, `id="modal-forward"`},
+		{"connections", "conn-load-banner", `id="sec-entries-body"`, `id="ext-plate"`},
+		{"sessions", "session-load-banner", `id="sec-exts-body"`, `id="modal-forward"`},
 	} {
 		if !strings.Contains(index, `id="`+tc.banner+`"`) {
 			t.Fatalf("index.html should still contain the %s banner", tc.name)
@@ -494,7 +513,7 @@ func TestModalsOutrankEverySurfaceThatOpensThem(t *testing.T) {
 		"#sec-entries-body",            // the drawer
 		".drawer-scrim",                // its scrim
 		".shell-window.win-fullscreen", // the terminal that hosts the hamburger
-		".session-tabbar",              // the tab bar
+		".sessdock",                    // the dock, which replaced the tab bar
 	} {
 		if got := z(below); got >= modal {
 			t.Errorf("%s is z-index %d, at or above the modal's %d: a dialog opened from it renders behind it", below, got, modal)
@@ -532,11 +551,15 @@ func TestNetHubIsAResponsiveResourceSidebar(t *testing.T) {
 	frame := between(t, css, ".workspace-frame {", "}")
 	for _, want := range []string{
 		"display: grid",
-		"grid-template-columns: var(--nethub-w) minmax(0, 1fr)",
+		// The flexible track is the CENTRE, which the extension column occupies;
+		// the session rail takes the third. The order is the point of the layout
+		// rework (hosts · extensions · sessions), so it is pinned here.
+		"grid-template-columns: var(--nethub-w) minmax(0, 1fr) var(--ext-w)",
+		"--ext-w: 260px",
 		"transition: grid-template-columns",
 	} {
 		if !strings.Contains(frame, want) {
-			t.Errorf("desktop NetHub layout must contain %q; got %q", want, frame)
+			t.Errorf("desktop frame layout must contain %q; got %q", want, frame)
 		}
 	}
 	if strings.Contains(frame, "position: fixed") || strings.Contains(frame, "50vw") {
@@ -589,17 +612,46 @@ func TestNetHubIsAResponsiveResourceSidebar(t *testing.T) {
 	}
 }
 
-// The extension panel answers the same collapse question NetHub does, and the
-// drawer scope must not reach into the desktop preference from this side
-// either: closing the overlay on a narrow screen would otherwise rail the
-// column a wide screen later arrives at.
-func TestExtensionPanelKeepsTheDrawerScopeOutOfThePreference(t *testing.T) {
-	ext := readAssetLF(t, "static/js/extensions.js")
-	if !strings.Contains(ext, "if (persist && !drawer)") {
-		t.Error("the extension preference must only be written above the drawer breakpoint")
+// The folding column answers the same collapse question NetHub does, and the
+// drawer scope must not reach into the desktop preference from this side either:
+// closing the overlay on a narrow screen would otherwise rail the column a wide
+// screen later arrives at.
+//
+// The owner is archive-column.js: the right-hand column that folds holds the
+// archive, and extensions.js no longer owns a fold at all (the extension plate is
+// the page's main region). Pointing this at the old module was exactly the kind
+// of test that keeps passing while the behaviour has moved somewhere else.
+func TestFoldingColumnKeepsTheDrawerScopeOutOfThePreference(t *testing.T) {
+	arch := readAssetLF(t, "static/js/archive-column.js")
+	if !strings.Contains(arch, "if (persist && !drawer)") {
+		t.Error("the column's preference must only be written above the drawer breakpoint")
 	}
-	if !strings.Contains(ext, "var wasOpen = wasDrawer && panel && panel.classList.contains('drawer-open')") {
+	if !strings.Contains(arch, "var wasOpen = wasDrawer && panel && panel.classList.contains('drawer-open')") {
 		t.Error("crossing out of the drawer scope must keep an open drawer open as a column")
+	}
+	/* dialogs.js puts one drawer away when the other opens, through a typeof
+	   guard because it loads first. That guard is what made the swap's renames
+	   dangerous: pointing it at a function nobody defines any more fails
+	   silently, and two drawers then sit open over one another. So the names it
+	   calls are pinned to their definitions here. */
+	dialogs := readAssetLF(t, "static/js/dialogs.js")
+	if !strings.Contains(dialogs, "typeof archiveCollapsed === 'function'") {
+		t.Error("dialogs.js should guard its cross-drawer call: the other module loads after it")
+	}
+	for _, fn := range []string{"archiveCollapsed", "setArchiveCollapsed"} {
+		if !strings.Contains(dialogs, fn+"(") {
+			t.Errorf("opening the host drawer should put the archive drawer away: dialogs.js never calls %s", fn)
+		}
+		if !strings.Contains(arch, "function "+fn+"(") {
+			t.Errorf("dialogs.js calls %s, which archive-column.js does not define: the typeof guard hides it", fn)
+		}
+	}
+	// One owner only: a second module writing the same key would let the two
+	// disagree about which one the page is in.
+	for _, other := range []string{"static/js/extensions.js", "static/js/shell-windows.js", "static/js/dialogs.js"} {
+		if strings.Contains(readAssetLF(t, other), "ARCHIVE_STATE_KEY") {
+			t.Errorf("%s also writes the column's preference; archive-column.js is its one owner", other)
+		}
 	}
 }
 
@@ -742,32 +794,49 @@ func TestNetHubSidebarKeepsThePageFromScrolling(t *testing.T) {
 		t.Errorf("the gap above the panel changed; the chrome constant counts it: %q", body)
 	}
 
-	// Chrome = header 57 + dock top padding 16 + (panel gap 8 + trigger 50) + dock
-	// bottom padding 16. The panel itself sits below the trigger, so it reserves the
-	// header, both dock paddings and the trigger's own row.
-	const chrome = 147
+	// The ceiling is built from MEASURED lengths, not a hand-counted constant.
+	//
+	// It used to be `calc(100dvh - 147px)`, where 147 was a sum a human maintained
+	// by hand: header 57 + dock padding 32 + gap 8 + trigger 50. The header is 60px
+	// now, not 57, so the constant was three pixels short and the page scrolled by
+	// exactly three pixels — the same class of error as the 134 that preceded it,
+	// and invisible in the stylesheet because the arithmetic looked right.
+	//
+	// --app-header-h and --dock-h are published by shell-windows.js from the real
+	// boxes, so a font, a language or a wrapped nav cannot put the sum out of date.
+	const ceiling = "calc(100dvh - var(--app-header-h, 60px) - var(--dock-h, 44px) - 90px)"
 	for _, m := range []struct{ name, rule string }{
 		{"the panel", body},
 		{"the collapsed rail", between(t, css, ".workspace-frame.nethub-collapsed .nethub-rail {", "}")},
-		{"the extension column's plate", between(t, css, ".extpanel-body {", "}")},
-		{"the extension column's collapsed rail", between(t, css, ".workspace-frame.ext-collapsed .extpanel-rail {", "}")},
+		/* The archive wears the hosts column's frame, so its body is a .nethub-body
+		   and inherits the ceiling above; it restates it on its own class anyway,
+		   because a column that relies on an invariant should say so where it
+		   lives rather than only in the rule it happens to inherit. */
+		{"the archive column's body", between(t, css, ".extpanel-body {", "}")},
 	} {
-		want := fmt.Sprintf("calc(100dvh - %dpx)", chrome)
-		if !strings.Contains(m.rule, want) {
+		if !strings.Contains(m.rule, ceiling) {
 			t.Errorf("%s must cap itself at %q so it cannot push the page past the viewport; got %q",
-				m.name, want, m.rule)
+				m.name, ceiling, m.rule)
 		}
 	}
 
-	// One constant, four consumers. A second literal is how 134 and 147 coexisted;
-	// the extension column is a third column of the same frame and pays the same
-	// chrome, so both of its states take the literal rather than numbers of their
-	// own.
-	if n := strings.Count(css, fmt.Sprintf("calc(100dvh - %dpx)", chrome)); n != 4 {
-		t.Errorf("expected the panel, both rails and the extension column to share ONE chrome constant; found %d uses", n)
+	/* One ceiling, every consumer — and FEWER consumers since the archive started
+	   wearing the hosts column's frame. It used to be five spellings: the panel,
+	   the rail, the archive's own panel, its own rail, and the folding body. The
+	   archive shares .nethub-body and .nethub-rail now, so three cover everything
+	   they used to: the shared body, the shared rail, and the archive's own body
+	   (which restates it deliberately). A second spelling is how 134 and 147
+	   coexisted, so the count is pinned rather than bounded — an extra copy is the
+	   failure this guards, and a missing one means a column lost its cap. */
+	if n := strings.Count(css, ceiling); n != 3 {
+		t.Errorf("expected the shared panel, the shared rail and the archive body to carry the ONE ceiling; found %d uses", n)
 	}
-	if strings.Contains(css, "100dvh - 134px") {
-		t.Error("134px is the old hand-count; the chrome is 147px (header 57 + dock padding 32 + gap 8 + trigger 50)")
+	// The hand-counted form is gone, and must not come back: it is what drifted.
+	for _, stale := range []string{"100dvh - 134px", "100dvh - 147px"} {
+		if strings.Contains(css, stale) {
+			t.Errorf("%q is a hand-counted chrome sum; the header and dock depths are measured "+
+				"(--app-header-h / --dock-h), so a literal here drifts the moment either box changes", stale)
+		}
 	}
 
 	// The dock's min-height used to subtract a guessed 52px header from a percentage
@@ -981,7 +1050,7 @@ func TestAddControlIsTheDrawersBottomAction(t *testing.T) {
 	if strings.Contains(between(t, entries, `id="sec-entries-body"`, `id="conn-grid"`), `id="conn-add"`) {
 		t.Error("the add action must not sit between the drawer's header and its list")
 	}
-	if !strings.Contains(between(t, entries, `id="conn-grid"`, `id="sec-sessions"`), `id="conn-add"`) {
+	if !strings.Contains(between(t, entries, `id="conn-grid"`, `id="ext-plate"`), `id="conn-add"`) {
 		t.Error("the add action belongs to the entries drawer, after its scrolling host list")
 	}
 

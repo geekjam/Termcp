@@ -7,7 +7,17 @@
      exactly the moment it is the point of the page. */
   html { background: var(--bg-canvas); }
   html, body { margin: 0; min-height: 100%; font-family: var(--font-sans); color: var(--text-primary); }
-  body { letter-spacing: .005em; }
+  /* The page is a COLUMN: the header, the workspace row, and the dock. The dock
+     is the last row rather than a fixed layer, which is what makes it share the
+     viewport with the workspace instead of covering the bottom of it (see
+     .sessdock). `min-height: 100dvh` keeps the dock at the bottom on a short
+     page — a column that only reaches its content height would float the dock
+     up under the workspace. */
+  body { letter-spacing: .005em; display: flex; flex-direction: column; min-height: 100dvh; }
+  /* The workspace row takes every pixel the header and dock leave. `min-height: 0`
+     is what lets it shrink instead of pushing the dock off-screen, and it is the
+     reason the panels inside can cap themselves at 100dvh and still fit. */
+  .dock { flex: 1 1 auto; min-height: 0; }
   /* Blackwall: one fixed layer under the whole page. z-index: -1 is load-bearing
      rather than decoration: a positioned element at auto/0 paints with the
      in-flow, z-index:0 layer — above every static background and card — so the
@@ -37,7 +47,7 @@
   }
   button, input, select, textarea { font-family: inherit; }
   /* Ports, ids, counts and clock values must not jitter as digits change width. */
-  :where(.sess-entry-line, .sess-sid-line, .sess-review, .batch-count, .app-version, .conn-temporary-mark, .session-tab-num) { font-variant-numeric: tabular-nums; }
+  :where(.sess-entry-line, .sess-sid-line, .sess-review, .batch-count, .app-version, .conn-temporary-mark) { font-variant-numeric: tabular-nums; }
   /* Sticky and translucent: the page scrolls under it, so the wordmark and the
      language switch stay reachable in a long session list. blur() is what keeps
      the bar readable over scrolling cards without painting a solid slab. */

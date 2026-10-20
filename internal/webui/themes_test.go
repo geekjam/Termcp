@@ -205,7 +205,11 @@ func TestBuiltInThemeCopyUsesCatalogKeysAndPlaceholders(t *testing.T) {
 			}
 		}
 		if id != "cyberpunk" {
-			for lang, want := range map[string]string{"en": "Connections", "zh-Hans": "连接", "zh-Hant": "連線"} {
+			// The base vocabulary is "hosts": the cards already said "Add host" /
+			// "添加主机", and the panel title was the last place still calling them
+			// connections. A theme that restates the key must carry the new wording,
+			// because its copy wins over the shared catalog.
+			for lang, want := range map[string]string{"en": "Hosts", "zh-Hans": "主机", "zh-Hant": "主機"} {
 				if got := catalog[lang]["nav.nethub"]; got != want {
 					t.Errorf("%s/%s title = %q, want %q", id, lang, got, want)
 				}

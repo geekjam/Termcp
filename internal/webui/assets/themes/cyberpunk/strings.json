@@ -15,7 +15,7 @@
     "session.status.dead": "Dead: {reason}",
     "session.dead.badge": "dead",
     "plate.sessions.empty": "No live sessions",
-    "plate.archive.empty": "Archive clear",
+    "plate.archive.empty": "The Mikoshi is empty",
     "nav.extensions": "Cyberware",
     "ext.kind.mcp": "MCP",
     "ext.kind.skill": "Skillware",
@@ -51,7 +51,6 @@
     "ext.status.disable": "Unequip",
     "ext.status.enable": "Equip",
     "ext.batch.export": "Export",
-    "ext.batch.openTitle": "Open the telemetry of each selected piece",
     "ext.batch.exportTitle": "Export the selected cyberware as TOML",
     "ext.batch.deleteTitle": "Uninstall selected cyberware",
     "ext.batch.deleteAria": "Uninstall selected cyberware",
@@ -64,7 +63,11 @@
     "ext.modal.tomlHint": "The designation of a piece of cyberware is its directory, so the file carries no name key.",
     "ext.modal.tomlEmpty": "The file is empty.",
     "ext.toast.retryFailed": "Re-initiation failed: {msg}",
-    "ext.toast.saveFailed": "Could not write the cyberware: {msg}"
+    "ext.toast.saveFailed": "Could not write the cyberware: {msg}",
+    "sec.archive": "Mikoshi",
+    "archive.count": "Mikoshi: {count} sessions",
+    "archive.fold": "Close the Mikoshi",
+    "archive.expand": "Open the Mikoshi"
   },
   "zh-Hans": {
     "nav.nethub": "网络接入仓",
@@ -80,7 +83,7 @@
     "conn.approval.markAria": "默认开启审阅",
     "conn.approval.mark": "该配置启动的会话默认开启审核模式",
     "plate.sessions.empty": "暂无活动会话",
-    "plate.archive.empty": "归档为空",
+    "plate.archive.empty": "神舆为空",
     "nav.extensions": "义体",
     "ext.kind.mcp": "MCP",
     "ext.kind.skill": "技能件",
@@ -116,7 +119,6 @@
     "ext.status.disable": "卸下",
     "ext.status.enable": "装上",
     "ext.batch.export": "导出",
-    "ext.batch.openTitle": "打开选中义体的状态",
     "ext.batch.exportTitle": "把选中的义体导出为 TOML",
     "ext.batch.deleteTitle": "卸载选中的义体",
     "ext.batch.deleteAria": "卸载选中的义体",
@@ -129,7 +131,11 @@
     "ext.modal.tomlHint": "义体的名称就是它的目录名，所以文件里没有 name 键。",
     "ext.modal.tomlEmpty": "文件内容为空。",
     "ext.toast.retryFailed": "重试失败：{msg}",
-    "ext.toast.saveFailed": "保存失败：{msg}"
+    "ext.toast.saveFailed": "保存失败：{msg}",
+    "sec.archive": "神舆",
+    "archive.count": "神舆：{count} 个会话",
+    "archive.fold": "关闭神舆",
+    "archive.expand": "开启神舆"
   },
   "zh-Hant": {
     "nav.nethub": "網路接入倉",
@@ -145,7 +151,7 @@
     "conn.approval.markAria": "預設開啟審閱",
     "conn.approval.mark": "此設定啟動的工作階段預設開啟審核模式",
     "plate.sessions.empty": "尚無使用中的工作階段",
-    "plate.archive.empty": "歸檔為空",
+    "plate.archive.empty": "神輿為空",
     "nav.extensions": "義體",
     "ext.kind.mcp": "MCP",
     "ext.kind.skill": "技能件",
@@ -181,7 +187,6 @@
     "ext.status.disable": "卸下",
     "ext.status.enable": "裝上",
     "ext.batch.export": "匯出",
-    "ext.batch.openTitle": "開啟選取義體的狀態",
     "ext.batch.exportTitle": "把選取的義體匯出為 TOML",
     "ext.batch.deleteTitle": "卸載選取的義體",
     "ext.batch.deleteAria": "卸載選取的義體",
@@ -194,6 +199,10 @@
     "ext.modal.tomlHint": "義體的名稱就是它的目錄名，所以檔案裡沒有 name 鍵。",
     "ext.modal.tomlEmpty": "檔案內容為空。",
     "ext.toast.retryFailed": "重試失敗：{msg}",
-    "ext.toast.saveFailed": "儲存失敗：{msg}"
+    "ext.toast.saveFailed": "儲存失敗：{msg}",
+    "sec.archive": "神輿",
+    "archive.count": "神輿：{count} 個工作階段",
+    "archive.fold": "關閉神輿",
+    "archive.expand": "開啟神輿"
   }
 }

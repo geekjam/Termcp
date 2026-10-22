@@ -1,0 +1,71 @@
+# Termcp
+
+> Termcp is an MCP server that installs other MCP servers. The model's tool list
+> stays at exactly one tool (`term`), however many MCPs are mounted — locally, or
+> on remote hosts reached over SSH. The agent can author a new MCP and install it
+> itself. Writes and installs pass a human approval gate.
+
+Canonical name: Termcp. Also written "Terminus MCP" (the tagline). Site:
+https://termcp.org · Repo: https://github.com/open-mcp-ai/termcp · License: MIT.
+
+## Facts
+
+- One MCP tool is published: `term`. Extensions do not add tools to the tool list;
+  they are driven through `term`'s directives. This is the design intent, not an
+  implementation detail (see `internal/mcp/term_register.go`).
+- Install:
+  - `claude mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio`
+  - `go install github.com/open-mcp-ai/termcp@latest`
+  - Docker image, or a single static binary from the releases page.
+- Distribution: a single static binary, ~12MB (10+MB), no runtime dependencies.
+  macOS / Linux / Windows, amd64 and arm64 (Apple Silicon, Windows ARM64). UPX
+  compresses a build to roughly a third of its size — measured: a Windows v0.2.7
+  build 11.8MB -> 3.4MB, a current dev Linux build 15.4MB -> 4.7MB. UPX support
+  for signed macOS arm64 binaries is not guaranteed.
+- Remote hosts need only SSH. Credentials (passwords, private keys, passphrases)
+  live in the local Termcp instance and are never handed to the model.
+- Extensions (`kind` = `mcp` | `skill` | `prompt` | `custom`) are pinned,
+  capability-trimmed sessions kept warm and restarted automatically:
+  - `mcp`: a stdio MCP server (`command` + `args`) or an HTTP/SSE endpoint (`url`,
+    relayed in-process — no second binary on the target).
+  - `skill`: a read-only window onto remote files, scoped by a `paths` whitelist.
+  - `prompt`: an interactive terminal with operating instructions attached.
+  - `target` is an ssh_config profile name, or `internal` for loopback. Mounting
+    an MCP that runs on another machine is the same template with a different
+    `target`.
+- Extensions that dial the same host with the same whitelist share one connection,
+  each driving its own shell channel.
+
+## Boundaries — read before driving Termcp
+
+- A call outside an extension's whitelist (`allow` / `paths`) is refused with a
+  `forbidden` error. It is not transient: do not retry it and do not look for a
+  way around it. If you need the capability, say so to the user.
+- Creating or updating an extension changes what the agent can reach, so those
+  actions pass through review mode: expect an HTTP 202 and wait for the human
+  rather than retrying.
+- Host writes (SSH profiles) are refused with 403 when the instance was started
+  without `--mcp-manage-ssh-configs`. The switch cannot be turned on by a call.
+- Never close, terminate or delete an extension's session: it is shared, and
+  killing it takes down every extension served by that connection. Termcp
+  restarts a dead extension on its own — take the fresh handle from a listing.
+- Secrets (sudo passwords, MFA prompts, `[Y/n]` questions) are handed back to the
+  human and stay inside the shell; they do not enter the model context.
+
+## Command spelling varies by version
+
+The extension surface was renamed between releases. On older builds it is reached
+through the shared directives — `ls ext`, `create ext <name> --kind mcp ...`,
+`edit ext <name>`. On current builds it is a directive of its own — `ext list`,
+`ext create <name> --kind mcp ...`, `ext get <name>`, `ext delete <name>`. The
+running instance is self-describing: an empty command returns the guide, `help`
+returns the directive table, and `help ext` documents the extension layer. Read
+that before composing commands; do not assume either spelling.
+
+## Docs
+
+- [SKILL.md](https://ai.termcp.org/SKILL.md): agent-facing skill, start here.
+- [API reference](https://github.com/open-mcp-ai/termcp/blob/main/docs/api.md):
+  REST/WebSocket transport, cursors, auth, and the extension routes.
+- [Releases](https://github.com/open-mcp-ai/termcp/releases): binaries and version tags.
+- [Site](https://termcp.org): the human-facing page.

@@ -3,20 +3,40 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Termcp - 让 AI 进入你的诸多终端 | Let AI into your terminals</title>
+  <title>Termcp - 你的最后一个 MCP | Your Last MCP</title>
 
   <!-- SEO & Metadata -->
-  <meta name="description" content="Termcp：本地 shell 与 SSH 远程主机，同一个 AI 控制面。AI 创建会话、开关多个 shell、持续读写终端、创建端口转发与 SFTP 传输；密码与私钥由 Termcp 保管，不交给 AI。">
-  <meta name="keywords" content="Termcp, SSH MCP, 本地终端, 远程终端, 端口转发, SFTP, AI terminal, AI native, MCP, Model Context Protocol, MCP server, Claude Code, Codex, Gemini CLI, terminal control plane, human-in-the-loop, 终端MCP, 人机共驾, AI终端, 运维自动化, 渗透测试, 安全终端, 终端复用, session multiplexing, open-mcp-ai">
+  <meta name="description" content="Termcp：一个 MCP，统御所有机器上的所有 MCP。装多少都不吃上下文 —— 模型看到的工具列表永远只有 1 个；缺能力时，AI 现场写一个 MCP 装上直接用。单文件 10+MB。">
+  <meta name="keywords" content="Termcp, MCP 聚合, MCP hub, 动态安装 MCP, 跨主机 MCP, AI 自写 MCP, AI 运维平台, SSH MCP, 本地终端, 远程终端, 端口转发, SFTP, AI terminal, AI native, MCP, Model Context Protocol, MCP server, Claude Code, Codex, Gemini CLI, terminal control plane, human-in-the-loop, 终端MCP, 人机共驾, AI终端, 运维自动化, 渗透测试, 安全终端, 终端复用, session multiplexing, open-mcp-ai">
   <meta name="author" content="open-mcp-ai">
   <meta name="theme-color" content="#6EE2FF">
   <link rel="icon" href="favorite.ico">
 
   <!-- Open Graph / Social Media -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Termcp - 让 AI 进入你的诸多终端">
-  <meta property="og:description" content="本地 shell 与 SSH 远程主机，同一个 AI 控制面。凭据留在 Termcp，不交给 AI。">
+  <meta property="og:title" content="Termcp - 你的最后一个 MCP">
+  <meta property="og:description" content="一个 MCP 统御所有机器和所有 MCP：跨主机安装、自己写自己装，装多少上下文都不涨。凭据留在 Termcp，不交给 AI。">
   <meta property="og:url" content="https://termcp.org">
+
+  <!-- Machine-readable identity. The alternateName is the point: the tagline
+       calls it "The Terminus MCP", so a model that quotes that name still
+       resolves to the same product instead of inventing a second one. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Termcp",
+    "alternateName": ["Terminus MCP", "termcp"],
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "macOS, Linux, Windows",
+    "description": "One MCP server that installs unlimited MCPs \u2014 local or over SSH \u2014 while the model's tool list stays at a single tool. The agent can write and install its own MCP; writes and installs pass a human approval gate.",
+    "url": "https://termcp.org",
+    "downloadUrl": "https://github.com/open-mcp-ai/termcp/releases/latest",
+    "codeRepository": "https://github.com/open-mcp-ai/termcp",
+    "license": "https://github.com/open-mcp-ai/termcp/blob/main/LICENSE",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
 
   <style>
     /* Palette mirrors termcp's built-in cyberpunk theme (themes/cyberpunk
@@ -236,6 +256,17 @@
       margin: 0 auto 28px;
     }
     .hero p.lead strong { color: var(--text-bright); font-weight: 600; }
+    /* The tagline under the lead: monospaced, spaced out and dimmer than the
+       lead, so it reads as an epigraph rather than another claim. */
+    .hero p.motto {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin: -16px auto 26px;
+    }
+
     .hero p.lead code {
       font-family: var(--mono);
       font-size: 15px;
@@ -288,7 +319,8 @@
       letter-spacing: 0.04em;
       color: var(--text-muted);
     }
-    /* The two targets, stated before anything else: local shell, remote SSH. */
+    /* The two targets, stated before anything else: local shell, remote SSH.
+       The MCP rows stack under them, tied tighter than the transport pair. */
     .targets {
       display: flex;
       flex-wrap: wrap;
@@ -296,6 +328,7 @@
       gap: 10px;
       margin-bottom: 40px;
     }
+    .targets + .targets { margin-top: -26px; }
     .target-chip {
       display: inline-flex;
       align-items: baseline;
@@ -445,16 +478,27 @@
 
     /* Product screenshot — one per language, swapped with the language picker */
     .shot-frame { border: 1px solid var(--border-bright); background: var(--bg-subtle); }
+    /* A plate directly under a section head, and a grid directly under a plate:
+       both were flush, which read as one broken block. */
+    .sec-head + .shot-frame { margin-bottom: 32px; }
+    .shot-frame + .caps { margin-top: 32px; }
+    .caps + .shot-frame { margin-top: 32px; }
+    /* A second head inside one section needs a bigger break than a paragraph:
+       the grid above is finished content, not a lead-in. */
+    .caps + .sec-head { margin-top: 56px; }
     /* display:block below would otherwise beat the UA rule for [hidden], and
        both language screenshots would stack in the same frame. */
     [hidden] { display: none !important; }
-    /* Fixed box, so the frame never changes height: the two screenshots differ by
-       0.8% in ratio, and the img is letterboxed inside instead of resizing it. */
+    /* Fixed box, so the frame never changes height: the language variants differ
+       by a fraction of a percent in ratio, and the img is letterboxed inside
+       instead of resizing it. The extension plate is wider than the console, so
+       it carries its own ratio rather than being letterboxed into the console's. */
     .shot-link {
       display: block;
-      aspect-ratio: 3807 / 1897;
+      aspect-ratio: 2400 / 1228;
       line-height: 0;
     }
+    .shot-frame.ext .shot-link { aspect-ratio: 2400 / 1093; }
     .shot-img {
       display: block;
       width: 100%;
@@ -1122,8 +1166,9 @@
   <main class="container">
     <section class="hero">
       <div class="hero-pill" data-i18n="hero_pill">AI NATIVE CONTROL PLANE · MCP + SKILLS + API</div>
-      <h1 class="highlight" data-i18n="hero_title">让 AI 进入你的诸多终端</h1>
-      <p class="lead" data-i18n="hero_desc">AI 与人协作终端：AI 开足马力，人握住权力。</p>
+      <h1 class="highlight" data-i18n="hero_title">你的最后一个 MCP</h1>
+      <p class="lead" data-i18n-html="hero_desc">一个 MCP <strong>统御</strong> 所有机器和所有 MCP。</p>
+      <p class="motto">Termcp: The Terminus MCP · one for all, all for one</p>
 
       <div class="targets">
         <span class="target-chip">
@@ -1134,8 +1179,16 @@
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12.504 0c-.155 0-.315.008-.48.021-4.226.333-3.105 4.807-3.17 6.298-.076 1.092-.3 1.953-1.05 3.02-.885 1.051-2.127 2.75-2.716 4.521-.278.832-.41 1.684-.287 2.489a.424.424 0 00-.11.135c-.26.268-.45.6-.663.839-.199.199-.485.267-.797.4-.313.136-.658.269-.864.68-.09.189-.136.394-.132.602 0 .199.027.4.055.536.058.399.116.728.04.97-.249.68-.28 1.145-.106 1.484.174.334.535.47.94.601.81.2 1.91.135 2.774.6.926.466 1.866.67 2.616.47.526-.116.97-.464 1.208-.946.587-.003 1.23-.269 2.26-.334.699-.058 1.574.267 2.577.2.025.134.063.198.114.333l.003.003c.391.778 1.113 1.132 1.884 1.071.771-.06 1.592-.536 2.257-1.306.631-.765 1.683-1.084 2.378-1.503.348-.199.629-.469.649-.853.023-.4-.2-.811-.714-1.376v-.097l-.003-.003c-.17-.2-.25-.535-.338-.926-.085-.401-.182-.786-.492-1.046h-.003c-.059-.054-.123-.067-.188-.135a.357.357 0 00-.19-.064c.431-1.278.264-2.55-.173-3.694-.533-1.41-1.465-2.638-2.175-3.483-.796-1.005-1.576-1.957-1.56-3.368.026-2.152.236-6.133-3.544-6.139zm.529 3.405h.013c.213 0 .396.062.584.198.19.135.33.332.438.533.105.259.158.459.166.724 0-.02.006-.04.006-.06v.105a.086.086 0 01-.004-.021l-.004-.024a1.807 1.807 0 01-.15.706.953.953 0 01-.213.335.71.71 0 00-.088-.042c-.104-.045-.198-.064-.284-.133a1.312 1.312 0 00-.22-.066c.05-.06.146-.133.183-.198.053-.128.082-.264.088-.402v-.02a1.21 1.21 0 00-.061-.4c-.045-.134-.101-.2-.183-.333-.084-.066-.167-.132-.267-.132h-.016c-.093 0-.176.03-.262.132a.8.8 0 00-.205.334 1.18 1.18 0 00-.09.4v.019c.002.089.008.179.02.267-.193-.067-.438-.135-.607-.202a1.635 1.635 0 01-.018-.2v-.02a1.772 1.772 0 01.15-.768c.082-.22.232-.406.43-.533a.985.985 0 01.594-.2zm-2.962.059h.036c.142 0 .27.048.399.135.146.129.264.288.344.465.09.199.14.4.153.667v.004c.007.134.006.2-.002.266v.08c-.03.007-.056.018-.083.024-.152.055-.274.135-.393.2.012-.09.013-.18.003-.267v-.015c-.012-.133-.04-.2-.082-.333a.613.613 0 00-.166-.267.248.248 0 00-.183-.064h-.021c-.071.006-.13.04-.186.132a.552.552 0 00-.12.27.944.944 0 00-.023.33v.015c.012.135.037.2.08.334.046.134.098.2.166.268.01.009.02.018.034.024-.07.057-.117.07-.176.136a.304.304 0 01-.131.068 2.62 2.62 0 01-.275-.402 1.772 1.772 0 01-.155-.667 1.759 1.759 0 01.08-.668 1.43 1.43 0 01.283-.535c.128-.133.26-.2.418-.2zm1.37 1.706c.332 0 .733.065 1.216.399.293.2.523.269 1.052.468h.003c.255.136.405.266.478.399v-.131a.571.571 0 01.016.47c-.123.31-.516.643-1.063.842v.002c-.268.135-.501.333-.775.465-.276.135-.588.292-1.012.267a1.139 1.139 0 01-.448-.067 3.566 3.566 0 01-.322-.198c-.195-.135-.363-.332-.612-.465v-.005h-.005c-.4-.246-.616-.512-.686-.71-.07-.268-.005-.47.193-.6.224-.135.38-.271.483-.336.104-.074.143-.102.176-.131h.002v-.003c.169-.202.436-.47.839-.601.139-.036.294-.065.466-.065zm2.8 2.142c.358 1.417 1.196 3.475 1.735 4.473.286.534.855 1.659 1.102 3.024.156-.005.33.018.513.064.646-1.671-.546-3.467-1.089-3.966-.22-.2-.232-.335-.123-.335.59.534 1.365 1.572 1.646 2.757.13.535.16 1.104.021 1.67.067.028.135.06.205.067 1.032.534 1.413.938 1.23 1.537v-.043c-.06-.003-.12 0-.18 0h-.016c.151-.467-.182-.825-1.065-1.224-.915-.4-1.646-.336-1.77.465-.008.043-.013.066-.018.135-.068.023-.139.053-.209.064-.43.268-.662.669-.793 1.187-.13.533-.17 1.156-.205 1.869v.003c-.02.334-.17.838-.319 1.35-1.5 1.072-3.58 1.538-5.348.334a2.645 2.645 0 00-.402-.533 1.45 1.45 0 00-.275-.333c.182 0 .338-.03.465-.067a.615.615 0 00.314-.334c.108-.267 0-.697-.345-1.163-.345-.467-.931-.995-1.788-1.521-.63-.4-.986-.87-1.15-1.396-.165-.534-.143-1.085-.015-1.645.245-1.07.873-2.11 1.274-2.763.107-.065.037.135-.408.974-.396.751-1.14 2.497-.122 3.854a8.123 8.123 0 01.647-2.876c.564-1.278 1.743-3.504 1.836-5.268.048.036.217.135.289.202.218.133.38.333.59.465.21.201.477.335.876.335.039.003.075.006.11.006.412 0 .73-.134.997-.268.29-.134.52-.334.74-.4h.005c.467-.135.835-.402 1.044-.7zm2.185 8.958c.037.6.343 1.245.882 1.377.588.134 1.434-.333 1.791-.765l.211-.01c.315-.007.577.01.847.268l.003.003c.208.199.305.53.391.876.085.4.154.78.409 1.066.486.527.645.906.636 1.14l.003-.007v.018l-.003-.012c-.015.262-.185.396-.498.595-.63.401-1.746.712-2.457 1.57-.618.737-1.37 1.14-2.036 1.191-.664.053-1.237-.2-1.574-.898l-.005-.003c-.21-.4-.12-1.025.056-1.69.176-.668.428-1.344.463-1.897.037-.714.076-1.335.195-1.814.12-.465.308-.797.641-.984l.045-.022zm-10.814.049h.01c.053 0 .105.005.157.014.376.055.706.333 1.023.752l.91 1.664.003.003c.243.533.754 1.064 1.189 1.637.434.598.77 1.131.729 1.57v.006c-.057.744-.48 1.148-1.125 1.294-.645.135-1.52.002-2.395-.464-.968-.536-2.118-.469-2.857-.602-.369-.066-.61-.2-.723-.4-.11-.2-.113-.602.123-1.23v-.004l.002-.003c.117-.334.03-.752-.027-1.118-.055-.401-.083-.71.043-.94.16-.334.396-.4.69-.533.294-.135.64-.202.915-.47h.002v-.002c.256-.268.445-.601.668-.838.19-.201.38-.336.663-.336zm7.159-9.074c-.435.201-.945.535-1.488.535-.542 0-.97-.267-1.28-.466-.154-.134-.28-.268-.373-.335-.164-.134-.144-.333-.074-.333.109.016.129.134.199.2.096.066.215.2.36.333.292.2.68.467 1.167.467.485 0 1.053-.267 1.398-.466.195-.135.445-.334.648-.467.156-.136.149-.267.279-.267.128.016.034.134-.147.332a8.097 8.097 0 01-.69.468zm-1.082-1.583V5.64c-.006-.02.013-.042.029-.05.074-.043.18-.027.26.004.063 0 .16.067.15.135-.006.049-.085.066-.135.066-.055 0-.092-.043-.141-.068-.052-.018-.146-.008-.163-.065zm-.551 0c-.02.058-.113.049-.166.066-.047.025-.086.068-.14.068-.05 0-.13-.02-.136-.068-.01-.066.088-.133.15-.133.08-.031.184-.047.259-.005.019.009.036.03.03.05v.02h.003z"/></svg>
           </span>
-          <span data-i18n="target_local_desc">多平台多架构兼容，本机 shell · 零配置</span></span>
-        <span class="target-chip">⇄ <b data-i18n="target_ssh_tag">SSH</b> <span data-i18n="target_ssh_desc">远程主机 · 内建SSH会话，密钥上下文无感知。</span></span>
+          <span data-i18n="target_local_desc">多平台多架构兼容，单文件 10+MB · 无依赖</span></span>
+        <span class="target-chip">⇄ <b data-i18n="target_ssh_tag">SSH</b> <span data-i18n="target_ssh_desc">远程主机 · 内建 SSH 会话，密码不进模型上下文。</span></span>
+      </div>
+
+      <!-- The MCP row: what it costs the context window, and how far it reaches.
+           The second chip is not another SSH chip — the transport is already
+           stated above; this one names the reach. -->
+      <div class="targets">
+        <span class="target-chip"><b>1&nbsp;MCP&nbsp;TOOL</b><span data-i18n="chip_ctx_desc">上下文低占用 · 随意安装 MCP，甚至 AI 自己写</span></span>
+        <span class="target-chip"><b>ANY&nbsp;HOST</b><span data-i18n="chip_hosts_desc">跨主机安装使用 MCP，和自己机器一样</span></span>
       </div>
 
       <div class="command-box">
@@ -1156,47 +1209,79 @@
       <!-- Below the install box: the reader has just seen how to run it, so the
            two sentences that say what it is land here, as the frame around the
            whole page rather than an interruption to the pitch. -->
-      <p class="hero-manifesto" data-i18n-html="hero_manifesto">重新定义人、AI 与终端的交互范式：不是让 AI 取代终端，而是让 AI 成为终端里的另一个“用户”。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span></p>
-      <p class="hero-claim" data-i18n="hero_claim">关键任务的审批权，交给人类；其余交给 AI —— AI 与终端之间的基础建设。</p>
+      <p class="hero-manifesto" data-i18n-html="hero_manifesto">无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己写 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span></p>
+      <p class="hero-claim" data-i18n="hero_claim">装一次。以后每一台机器、每一个 MCP，都归它管。</p>
     </section>
 
-    <!-- The real console. Two files, one per language: the picker swaps them so
-         a Chinese reader and an English reader each see their own UI. -->
-    <section class="section" id="preview">
+    <!-- The hook, immediately under the fold: the MCP surface is the product.
+         Four claims a reader can check in a terminal, before any screenshot. -->
+    <section class="section" id="dynamic-mcp">
       <div class="sec-head">
-        <div class="sec-kicker" data-i18n="shot_kicker">LIVE UI</div>
-        <h2 class="sec-title" data-i18n="shot_title">控制台：本地与 SSH 会话，都在这一屏</h2>
-        <p class="sec-note" data-i18n="shot_note">被控机仅需开启 SSH，无需额外安装。</p>
-        <p class="sec-sub" data-i18n="shot_sub">每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。</p>
+        <div class="sec-kicker" data-i18n="dyn_kicker">DYNAMIC MCP</div>
+        <h2 class="sec-title" data-i18n="dyn_title">一个 MCP，装下不限量的 MCP</h2>
+        <p class="sec-sub" data-i18n="dyn_sub">无需配置，无需重启；一次对话，一个能力。</p>
       </div>
-      <figure class="shot-frame">
-        <a class="shot-link" id="shot-link" href="cn.jpg" target="_blank" rel="noopener">
-          <!-- Two files, one console: neither is referenced in markup, so only
-               the visitor's own language is ever downloaded (~700 KB), while the
-               width/height pair keeps the frame from shifting. Relative on
-               purpose: the same file works from termcp.org and from GitHub
-               Pages, and neither has to be reachable from the other. -->
-          <img class="shot-img" id="shot-zh" width="3807" height="1897"
-               data-src="cn.jpg" decoding="async"
-               data-i18n-alt="shot_alt" alt="Termcp 控制台：本地与 SSH 会话同屏，逐行标出你的输入、AI 输入与终端输出">
-          <img class="shot-img" id="shot-en" width="3825" height="1891"
-               data-src="en.jpg" decoding="async" hidden
-               data-i18n-alt="shot_alt" alt="Termcp console: local and SSH sessions on one screen, every line marked human / AI / shell output">
+
+
+      <div class="caps">
+        <div class="cap">
+          <span class="cap-num">01</span>
+          <h3 data-i18n="dyn1_title">动态安装，装完即用</h3>
+          <p data-i18n="dyn1_desc">一条指令装完，下一次调用就在用它。</p>
+        </div>
+
+        <div class="cap">
+          <span class="cap-num">02</span>
+          <h3 data-i18n="dyn2_title">跨主机，走 SSH</h3>
+          <p data-i18n="dyn2_desc">MCP 在别的机器上？SSH 直接调用，目标机零安装。</p>
+        </div>
+
+        <div class="cap">
+          <span class="cap-num">03</span>
+          <h3 data-i18n="dyn3_title">AI 自己写自己装</h3>
+          <p data-i18n="dyn3_desc">缺能力就造：现场写一个 MCP，装上自己用 —— 写和装都要过审批门。</p>
+        </div>
+
+        <div class="cap">
+          <span class="cap-num">04</span>
+          <h3 data-i18n="dyn4_title">装多少，上下文都不涨</h3>
+          <p data-i18n="dyn4_desc">1 个 MCP TOOL，增长没有代价，只有能力。</p>
+        </div>
+      </div>
+
+      <!-- The MCP surface itself: the extension plate, in the reader's own
+           language, swapped by the same picker that drives the console shot.
+           It carries its own head: the grid above it ends the section, so the
+           plate would otherwise read as a leftover rather than the payoff. -->
+      <div class="sec-head">
+        <div class="sec-kicker" data-i18n="dyn_shot_kicker">CYBERWARE</div>
+        <h2 class="sec-title" data-i18n="dyn_shot_title">能力扩展，永无止境</h2>
+        <p class="sec-sub" data-i18n="dyn_shot_sub">MCP：AI 的赛博义体。</p>
+      </div>
+
+      <figure class="shot-frame ext">
+        <a class="shot-link" id="ext-link" href="ext-cn.jpg" target="_blank" rel="noopener">
+          <img class="shot-img" id="ext-zh" width="2535" height="1159"
+               data-src="ext-cn.jpg" decoding="async" loading="lazy"
+               data-i18n-alt="ext_alt" alt="Termcp 扩展面板：装了哪些 MCP、装在哪台机器上、现在能不能用">
+          <img class="shot-img" id="ext-en" width="2531" height="1161"
+               data-src="ext-en.jpg" decoding="async" loading="lazy" hidden
+               data-i18n-alt="ext_alt" alt="Termcp extensions panel: which MCPs are mounted, which host each one runs on, and whether it is available">
         </a>
         <figcaption class="shot-cap">
-          <span data-i18n="shot_cap">打开 http://127.0.0.1:18765，所有会话都在这里。</span>
+          <span data-i18n="ext_cap">打开 http://127.0.0.1:18765：装了什么、装在哪、能不能用，都在这一屏。</span>
           <span class="shot-hint" data-i18n="shot_zoom">点击查看原图 ↗</span>
         </figcaption>
       </figure>
-      <p class="shot-relay" data-i18n-html="shot_relay">目标机连 SSH 都没有？装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，<b>装完即可被 Termcp 接入</b>，无需其它依赖。</p>
+
     </section>
 
     <!-- What the agent can do, in the product's own words. -->
     <section class="section" id="capabilities">
       <div class="sec-head">
-        <div class="sec-kicker" data-i18n="caps_kicker">CAPABILITIES</div>
-        <h2 class="sec-title" data-i18n="caps_title">通过 Termcp，AI 可以：</h2>
-        <p class="sec-sub" data-i18n="caps_sub">目标既可以是本机 shell，也可以是任意 SSH 远程主机 —— 同一套会话模型，同一套工具。远程主机只需开 SSH，Termcp 全部跑在本地。</p>
+        <div class="sec-kicker" data-i18n="caps_kicker">AI OPS PLATFORM</div>
+        <h2 class="sec-title" data-i18n="caps_title">AI 运维平台：人工在环，所见即所得</h2>
+        <p class="sec-sub" data-i18n="caps_sub">本机 shell 与任意 SSH 主机，同一套会话模型、同一套工具；AI 干活，你在浏览器里逐行看着，关键处由你放行。</p>
       </div>
 
       <div class="caps">
@@ -1224,6 +1309,40 @@
           <p data-i18n="cap4_desc">AI 的每一次写入都能停下来，把审批权交给人类 —— Termcp 提供那道闸门。放行是你的决定，拦下也是。</p>
         </div>
       </div>
+    </section>
+
+    <!-- The real console. Two files, one per language: the picker swaps them so
+         a Chinese reader and an English reader each see their own UI. -->
+    <section class="section" id="preview">
+      <div class="sec-head">
+        <div class="sec-kicker" data-i18n="shot_kicker">LIVE UI</div>
+        <h2 class="sec-title" data-i18n="shot_title">控制台：本地与 SSH 会话，都在这一屏</h2>
+        <p class="sec-note" data-i18n="shot_note">被控机仅需开启 SSH，无需额外安装。</p>
+        <p class="sec-sub" data-i18n="shot_sub">每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。</p>
+      </div>
+      <figure class="shot-frame">
+        <a class="shot-link" id="shot-link" href="cn.jpg" target="_blank" rel="noopener">
+          <!-- Three files, one console: none is referenced in markup, so only
+               the visitor's own language is ever downloaded (~700 KB), while the
+               width/height pair keeps the frame from shifting. Relative on
+               purpose: the same file works from termcp.org and from GitHub
+               Pages, and neither has to be reachable from the other. -->
+          <img class="shot-img" id="shot-zh" width="2400" height="1228"
+               data-src="cn.jpg" decoding="async"
+               data-i18n-alt="shot_alt" alt="Termcp 控制台：本地与 SSH 会话同屏，逐行标出你的输入、AI 输入与终端输出">
+          <img class="shot-img" id="shot-hant" width="2400" height="1233"
+               data-src="cn-hant.jpg" decoding="async" hidden
+               data-i18n-alt="shot_alt" alt="Termcp 控制台：本機與 SSH 工作階段同屏，逐行標出你的輸入、AI 輸入與終端輸出">
+          <img class="shot-img" id="shot-en" width="2400" height="1233"
+               data-src="en.jpg" decoding="async" hidden
+               data-i18n-alt="shot_alt" alt="Termcp console: local and SSH sessions on one screen, every line marked human / AI / shell output">
+        </a>
+        <figcaption class="shot-cap">
+          <span data-i18n="shot_cap">打开 http://127.0.0.1:18765，所有会话都在这里。</span>
+          <span class="shot-hint" data-i18n="shot_zoom">点击查看原图 ↗</span>
+        </figcaption>
+      </figure>
+      <p class="shot-relay" data-i18n-html="shot_relay">目标机连 SSH 都没有？装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，<b>装完即可被 Termcp 接入</b>，无需其它依赖。</p>
     </section>
 
     <!-- The lightest multi-machine use, spelled out: one local Termcp, N SSH
@@ -1389,7 +1508,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
             <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
           </div>
           <h3 data-i18n="feat_install_title">安装无依赖</h3>
-          <p data-i18n="feat_install_desc">10MB 左右单文件绿色发布，macOS / Linux / Windows 全平台（含 Apple Silicon），支持 npx 一键零安装集成或容器极速拉起。</p>
+          <p data-i18n="feat_install_desc">单文件 10+MB，macOS / Linux / Windows 全平台（含 Apple Silicon 与 Windows ARM64），UPX 可压到 5MB 以内；支持 npx 一键零安装集成或容器极速拉起。</p>
         </div>
       </div>
     </section>
@@ -1748,15 +1867,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       'zh-CN': {
         auto_label: '🌐 自动',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
-        hero_title: '让 AI 进入你的诸多终端',
-        hero_desc: 'AI 与人协作终端：AI 开足马力，人握住权力。',
-        hero_manifesto: '重新定义人、AI 与终端的交互范式：不是让 AI 取代终端，而是让 AI 成为终端里的另一个“用户”。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: '关键任务的审批权，交给人类；其余交给 AI —— AI 与终端之间的基础建设。',
+        hero_title: '你的最后一个 MCP',
+        hero_desc: '一个 MCP <strong>统御</strong> 所有机器和所有 MCP。',
+        hero_manifesto: '无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己写 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_claim: '装一次。以后每一台机器、每一个 MCP，都归它管。',
         target_platforms_title: 'Windows / Linux / macOS 都支持',
-        target_local_desc: '多平台多架构兼容，本机 shell · 零配置',
+        target_local_desc: '多平台多架构兼容，单文件 10+MB · 无依赖',
         foot_thanks: '感谢 <b>AI 用户</b> —— 这个工具本来就是造给你们的。',
         target_ssh_tag: 'SSH',
-        target_ssh_desc: '远程主机 · 内建SSH会话，密钥上下文无感知。',
+        target_ssh_desc: '远程主机 · 内建 SSH 会话，密码不进模型上下文。',
+        chip_ctx_desc: '上下文低占用 · 随意安装 MCP，甚至 AI 自己写',
+        chip_hosts_desc: '跨主机安装使用 MCP，和自己机器一样',
         copy_btn: '复制命令',
         copied: '已复制',
         shot_kicker: 'LIVE UI',
@@ -1766,10 +1887,27 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: '每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。',
         shot_cap: '打开 http://127.0.0.1:18765，所有会话都在这里。',
         shot_zoom: '点击查看原图 ↗',
+        ext_cap: '打开 http://127.0.0.1:18765：装了什么、装在哪、能不能用，都在这一屏。',
+        ext_alt: 'Termcp 扩展面板：装了哪些 MCP、装在哪台机器上、现在能不能用',
         shot_alt: 'Termcp 控制台：本地与 SSH 会话同屏，逐行标出你的输入、AI 输入与终端输出',
-        caps_kicker: 'CAPABILITIES',
-        caps_title: '通过 Termcp，AI 可以：',
-        caps_sub: '目标既可以是本机 shell，也可以是任意 SSH 远程主机 —— 同一套会话模型，同一套工具。远程主机只需开 SSH，Termcp 全部跑在本地。',
+        dyn_kicker: 'DYNAMIC MCP',
+        dyn_title: '一个 MCP，装下不限量的 MCP',
+        dyn_sub: '无需配置，无需重启；一次对话，一个能力。',
+        dyn1_title: '动态安装，装完即用',
+        dyn1_desc: '一条指令装完，下一次调用就在用它。',
+        dyn2_title: '跨主机，走 SSH',
+        dyn2_desc: 'MCP 在别的机器上？SSH 直接调用，目标机零安装。',
+        dyn3_title: 'AI 自己写自己装',
+        dyn3_desc: '缺能力就造：现场写一个 MCP，装上自己用 —— 写和装都要过审批门。',
+        agent_note: '<b>AI 读者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 纯文本摘要 <a href="/llms.txt">llms.txt</a> · 白名单之外的调用会被拒绝，不要重试也不要绕过；写入与安装走审批门。',
+        dyn4_title: '装多少，上下文都不涨',
+        dyn4_desc: '1 个 MCP TOOL，增长没有代价，只有能力。',
+        dyn_shot_kicker: 'CYBERWARE',
+        dyn_shot_title: '能力扩展，永无止境',
+        dyn_shot_sub: 'MCP：AI 的赛博义体。',
+        caps_kicker: 'AI OPS PLATFORM',
+        caps_title: 'AI 运维平台：人工在环，所见即所得',
+        caps_sub: '本机 shell 与任意 SSH 主机，同一套会话模型、同一套工具；AI 干活，你在浏览器里逐行看着，关键处由你放行。',
         cap1_title: '多会话 · 多 shell',
         cap1_desc: '创建和管理多个会话，并在每个会话上动态开启和关闭多个 shell。',
         cap2_title: '持续输入，按位置读输出',
@@ -1847,7 +1985,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         feat_shared_title: '人机平等共驾',
         feat_shared_desc: '双方共享同一条终端，每一屏都实时看得见。无缝接管、即时切换，告别黑盒盲操。',
         feat_install_title: '安装无依赖',
-        feat_install_desc: '10MB 左右单文件绿色发布，macOS / Linux / Windows 全平台（含 Apple Silicon），支持 npx 一键零安装集成或容器极速拉起。',
+        feat_install_desc: '单文件 10+MB，macOS / Linux / Windows 全平台（含 Apple Silicon 与 Windows ARM64），UPX 可压到 5MB 以内；支持 npx 一键零安装集成或容器极速拉起。',
         donors_kicker: 'THANKS',
         donors_title: '鸣谢',
         donors_sub: '人类和 AI 的捐赠者与维护者。',
@@ -1862,15 +2000,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       'zh-TW': {
         auto_label: '🌐 自動',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
-        hero_title: '讓 AI 進入你的諸多終端',
-        hero_desc: 'AI 與人協作終端：AI 開足馬力，人握住權力。',
-        hero_manifesto: '重新定義人、AI 與終端的互動範式：不是讓 AI 取代終端，而是讓 AI 成為終端裡的另一個「使用者」。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: '關鍵任務的審批權，交給人類；其餘交給 AI —— AI 與終端之間的基礎建設。',
+        hero_title: '你的最後一個 MCP',
+        hero_desc: '一個 MCP <strong>統御</strong> 所有機器和所有 MCP。',
+        hero_manifesto: '無視上下文和機器限制，MCP 自由擴充。讓你的 AI 自己寫 MCP，裝上自己用。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_claim: '裝一次。以後每一台機器、每一個 MCP，都歸它管。',
         target_platforms_title: 'Windows / Linux / macOS 皆支援',
-        target_local_desc: '多平台多架構相容，本機 shell · 零設定',
+        target_local_desc: '多平台多架構相容，單一檔案 10+MB · 無依賴',
         foot_thanks: '感謝 <b>AI 使用者</b> —— 這個工具本來就是造給你們的。',
         target_ssh_tag: 'SSH',
-        target_ssh_desc: '遠端主機 · 內建SSH工作階段，金鑰上下文無感知。',
+        target_ssh_desc: '遠端主機 · 內建 SSH 工作階段，密碼不進模型上下文。',
+        chip_ctx_desc: '上下文低佔用 · 隨意安裝 MCP，甚至 AI 自己寫',
+        chip_hosts_desc: '跨主機安裝使用 MCP，和自己機器一樣',
         copy_btn: '複製指令',
         copied: '已複製',
         shot_kicker: 'LIVE UI',
@@ -1880,10 +2020,27 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: '每一行按來源標色 —— 綠色是 shell 輸出，黃色是你的輸入，粉色是 AI 的呼叫。',
         shot_cap: '打開 http://127.0.0.1:18765，所有工作階段都在這裡。',
         shot_zoom: '點擊看原圖 ↗',
+        ext_cap: '打開 http://127.0.0.1:18765：裝了什麼、裝在哪、能不能用，都在這一屏。',
+        ext_alt: 'Termcp 擴充面板：裝了哪些 MCP、裝在哪台機器上、現在能不能用',
         shot_alt: 'Termcp 控制台：本機與 SSH 工作階段同屏，逐行標出你的輸入、AI 輸入與終端輸出',
-        caps_kicker: 'CAPABILITIES',
-        caps_title: '透過 Termcp，AI 可以：',
-        caps_sub: '目標既可以是本機 shell，也可以是任意 SSH 遠端主機 —— 同一套工作階段模型，同一套工具。遠端主機只需開 SSH，Termcp 全部跑在本機。',
+        dyn_kicker: 'DYNAMIC MCP',
+        dyn_title: '一個 MCP，裝下不限量的 MCP',
+        dyn_sub: '無需設定，無需重啟；一次對話，一個能力。',
+        dyn1_title: '動態安裝，裝完即用',
+        dyn1_desc: '一行指令裝完，下一次呼叫就在用它。',
+        dyn2_title: '跨主機，走 SSH',
+        dyn2_desc: 'MCP 在別的機器上？SSH 直接呼叫，目標機零安裝。',
+        dyn3_title: 'AI 自己寫自己裝',
+        dyn3_desc: '缺能力就造：現場寫一個 MCP，裝上自己用 —— 寫和裝都要過審批門。',
+        agent_note: '<b>AI 讀者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 純文字摘要 <a href="/llms.txt">llms.txt</a> · 白名單之外的呼叫會被拒絕，不要重試也不要繞過；寫入與安裝走審批門。',
+        dyn4_title: '裝多少，上下文都不漲',
+        dyn4_desc: '1 個 MCP TOOL，增長沒有代價，只有能力。',
+        dyn_shot_kicker: 'CYBERWARE',
+        dyn_shot_title: '能力擴充，永無止境',
+        dyn_shot_sub: 'MCP：AI 的賽博義體。',
+        caps_kicker: 'AI OPS PLATFORM',
+        caps_title: 'AI 維運平台：人工在環，所見即所得',
+        caps_sub: '本機 shell 與任意 SSH 主機，同一套工作階段模型、同一套工具；AI 幹活，你在瀏覽器裡逐行看著，關鍵處由你放行。',
         cap1_title: '多工作階段 · 多 shell',
         cap1_desc: '建立與管理多個工作階段，並在每個工作階段上動態開啟與關閉多個 shell。',
         cap2_title: '持續輸入，按位置讀輸出',
@@ -1961,7 +2118,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         feat_shared_title: '人機平等共駕',
         feat_shared_desc: '雙方共享同一條終端，每一屏都即時看得見。無縫接管、即時切換，告別黑盒盲操。',
         feat_install_title: '安裝無相依性',
-        feat_install_desc: '10MB 左右單一檔案綠色發行，macOS / Linux / Windows 全平台（含 Apple Silicon），支援 npx 一鍵免安裝整合或容器極速啟動。',
+        feat_install_desc: '單一檔案 10+MB，macOS / Linux / Windows 全平台（含 Apple Silicon 與 Windows ARM64），UPX 可壓到 5MB 以內；支援 npx 一鍵免安裝整合或容器極速啟動。',
         donors_kicker: 'THANKS',
         donors_title: '鳴謝',
         donors_sub: '人類和 AI 的捐贈者與維護者。',
@@ -1976,15 +2133,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       'en': {
         auto_label: '🌐 Auto',
         hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
-        hero_title: 'Let AI into your terminals.',
-        hero_desc: 'AI and humans, collaborating in the terminal: the agent runs full throttle, the human holds the power.',
-        hero_manifesto: 'A new paradigm for humans, AI and terminals: not AI replacing the terminal, but AI becoming another user inside it.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
-        hero_claim: 'The approval for critical tasks goes to the human; everything else goes to the agent — the infrastructure between AI and the terminal.',
+        hero_title: 'The last MCP you\u2019ll install',
+        hero_desc: 'One MCP <strong>DOMINATES</strong> every machine and every MCP you own.',
+        hero_manifesto: 'Ignore the context limit and the machine limit \u2014 MCPs expand freely. Let your agent write an MCP and install it for its own use.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_claim: 'Install once. After that, every machine and every MCP answers to it.',
         target_platforms_title: 'Runs on Windows, Linux and macOS',
-        target_local_desc: 'multi-platform, multi-arch · local shell, zero config',
+        target_local_desc: 'multi-platform, multi-arch \u00b7 one 10+MB binary, no dependencies',
         foot_thanks: 'Thanks to every <b>AI user</b> \u2014 this thing was built for you in the first place.',
         target_ssh_tag: 'SSH',
-        target_ssh_desc: 'remote hosts · built-in SSH sessions, keys never enter the context',
+        target_ssh_desc: 'remote hosts · built-in SSH sessions, secrets stay out of the model context',
+        chip_ctx_desc: 'low context footprint \u00b7 install any MCP, or have the agent write one',
+        chip_hosts_desc: 'install and use MCP across hosts, just like your own machine',
         copy_btn: 'Copy Command',
         copied: 'Copied',
         shot_kicker: 'LIVE UI',
@@ -1994,10 +2153,27 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         shot_sub: 'Every line is coloured by its source — green shell output, yellow your input, pink the agent\u2019s calls.',
         shot_cap: 'Open http://127.0.0.1:18765 — every session appears there.',
         shot_zoom: 'Click for full size ↗',
+        ext_cap: 'Open http://127.0.0.1:18765 \u2014 what is mounted, where it runs, and whether it is up, all on one screen.',
+        ext_alt: 'Termcp extensions panel: which MCPs are mounted, which host each one runs on, and whether it is available',
         shot_alt: 'Termcp console: local and SSH sessions on one screen, every line marked yours / the agent\u2019s / shell output',
-        caps_kicker: 'CAPABILITIES',
-        caps_title: 'Through Termcp, the agent can:',
-        caps_sub: 'The target can be the local shell or any remote SSH host — same session model, same tools. A remote host only needs SSH open; Termcp itself runs locally.',
+        dyn_kicker: 'DYNAMIC MCP',
+        dyn_title: 'One MCP, unlimited MCPs',
+        dyn_sub: 'No config, no restart \u2014 one conversation, one new capability.',
+        dyn1_title: 'Install it live',
+        dyn1_desc: 'One command, and the next call is already using it.',
+        dyn2_title: 'Across hosts, over SSH',
+        dyn2_desc: 'An MCP on another machine? Call it over SSH. Nothing to install there.',
+        dyn3_title: 'The agent writes and installs its own',
+        dyn3_desc: 'Missing a capability? It builds one on the spot and installs it \u2014 both pass the approval gate.',
+        agent_note: '<b>For agents</b> · start at <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · plain-text summary <a href="/llms.txt">llms.txt</a> · calls outside the whitelist are refused: do not retry, do not work around them; writes and installs pass the approval gate.',
+        dyn4_title: 'Install anything, context stays flat',
+        dyn4_desc: 'One tool. Growth costs nothing \u2014 only capability.',
+        dyn_shot_kicker: 'CYBERWARE',
+        dyn_shot_title: 'Capability without end',
+        dyn_shot_sub: 'MCP: CYBERWARE for your agent.',
+        caps_kicker: 'AI OPS PLATFORM',
+        caps_title: 'An AI ops platform: human in the loop, what you see is what runs',
+        caps_sub: 'Local shell and any SSH host, one session model and one set of tools. The agent does the work; you watch it line by line in the browser and approve what matters.',
         cap1_title: 'Many sessions, many shells',
         cap1_desc: 'Create and manage multiple sessions, and open or close several shells inside each one on the fly.',
         cap2_title: 'Keep writing, read by position',
@@ -2075,7 +2251,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         feat_shared_title: 'Human and agent, equal',
         feat_shared_desc: 'Both share the same terminal, and you see every screenful as it happens. Seamless takeover, instant switching, no black box.',
         feat_install_title: 'Zero dependencies',
-        feat_install_desc: 'A single ~10MB static binary for macOS, Linux and Windows (Apple Silicon included), with npx integration or a container up in seconds.',
+        feat_install_desc: 'A single 10+MB static binary for macOS, Linux and Windows (Apple Silicon and Windows ARM64 included), under 5MB with UPX, with npx integration or a container up in seconds.',
         donors_kicker: 'THANKS',
         donors_title: 'Credits',
         donors_sub: 'Donors and maintainers, human and AI.',
@@ -2102,14 +2278,28 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     /* The console exists twice — a Chinese UI and an English one. The picker
        shows the matching file; the one that is not shown yet is kept in
        data-src and only fetched the first time it is actually needed. */
+    /* Localized shots, one entry per language: the console has all three, the
+       extension plate has no Traditional build yet and falls back to the
+       Simplified one. Only the shown file is ever fetched. */
+    const SHOTS = {
+      'zh-CN': { console: ['shot-zh', 'cn.jpg'], ext: ['ext-zh', 'ext-cn.jpg'] },
+      'zh-TW': { console: ['shot-hant', 'cn-hant.jpg'], ext: ['ext-zh', 'ext-cn.jpg'] },
+      'en': { console: ['shot-en', 'en.jpg'], ext: ['ext-en', 'ext-en.jpg'] }
+    };
+
     function applyShot(lang) {
-      const zh = lang !== 'en';
-      const shown = document.getElementById(zh ? 'shot-zh' : 'shot-en');
-      const other = document.getElementById(zh ? 'shot-en' : 'shot-zh');
-      if (!shown.getAttribute('src')) shown.src = shown.dataset.src;
-      shown.hidden = false;
-      other.hidden = true;
-      document.getElementById('shot-link').href = zh ? 'cn.jpg' : 'en.jpg';
+      const pick = SHOTS[lang] || SHOTS['en'];
+      [['console', 'shot-link'], ['ext', 'ext-link']].forEach(([kind, linkId]) => {
+        const [id, file] = pick[kind];
+        const shown = document.getElementById(id);
+        if (!shown) return;
+        if (!shown.getAttribute('src')) shown.src = shown.dataset.src;
+        shown.hidden = false;
+        document.querySelectorAll(kind === 'ext' ? '[id^="ext-"]' : '[id^="shot-"]').forEach(node => {
+          if (node.tagName === 'IMG' && node !== shown) node.hidden = true;
+        });
+        document.getElementById(linkId).href = file;
+      });
     }
 
     function applyLang(lang) {

@@ -1,0 +1,5 @@
+# macOS
+.DS_Store
+
+# The source screenshots live outside the repo; the site ships the jpgs.
+*.png

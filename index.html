@@ -696,7 +696,7 @@
     .gate-actions .gate-reject { border-color: rgba(255, 61, 110, 0.5); color: var(--pink); }
     .gate-actions .gate-reject:hover { background: var(--pink); color: #04121a; }
 
-    /* notify_user: the toast the human gets when the agent hands the prompt back. */
+    /* notify: the toast the human gets when the agent hands the prompt back. */
     .term-toast {
       position: absolute;
       top: 52px;
@@ -1364,15 +1364,15 @@
           </div>
           <div class="fleet-step">
             <span class="n">2</span>
-            <p data-i18n-html="fleet_s2">开三个终端会话，分别 <code>ssh user@node-1</code>、<code>node-2</code>、<code>node-3</code> —— 在控制台或直接让 AI 建都行。</p>
+            <p data-i18n-html="fleet_s2">三台主机先写进 <code>ssh_config</code>，然后 <code>connect</code> 三次 —— 控制台里点，或者直接让 AI 建。</p>
           </div>
           <div class="fleet-step">
             <span class="n">3</span>
-            <p data-i18n-html="fleet_s3">AI 通过 MCP 同时向这三个终端写入命令：每个会话是一个 <code>session_id</code>，每个窗口是一个 <code>shell_id</code>，可以并行读写、也可以一个窗口一条命令。</p>
+            <p data-i18n-html="fleet_s3">AI 一条命令同时写这三个窗口：命令行从 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引号转义不用它操心；语句末尾加 <code>&amp;</code> 就是并行，不等前面的。</p>
           </div>
           <div class="fleet-step">
             <span class="n">4</span>
-            <p data-i18n-html="fleet_s4">想加机器？再开一个终端窗口。三台和三十台是同一套模型，只是多几个 <code>session_start</code>。</p>
+            <p data-i18n-html="fleet_s4">想加机器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多几个地址。</p>
           </div>
           <p class="fleet-note" data-i18n-html="fleet_note"><b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。</p>
         </div>
@@ -1383,14 +1383,16 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
   <span class="h">→ http://127.0.0.1:18765</span>
 
 <span class="c" data-i18n="fleet_c2"># 控制面里的三条会话（AI 的视角）</span>
-<span class="a">session_start</span>(ssh_config=<span class="k">"node-1"</span>)  <span class="h">→ sess_n1</span>
-<span class="a">session_start</span>(ssh_config=<span class="k">"node-2"</span>)  <span class="h">→ sess_n2</span>
-<span class="a">session_start</span>(ssh_config=<span class="k">"node-3"</span>)  <span class="h">→ sess_n3</span>
+<span class="a">term</span>(cmd=<span class="k">"connect node-1"</span>)  <span class="h">→ a1f3:1</span>
+<span class="a">term</span>(cmd=<span class="k">"connect node-2"</span>)  <span class="h">→ b7c2:1</span>
+<span class="a">term</span>(cmd=<span class="k">"connect node-3"</span>)  <span class="h">→ d9e1:1</span>
 
-<span class="c" data-i18n="fleet_c3"># 三个窗口，各写各的</span>
-<span class="a">shell_input</span>(<span class="k">"sess_n1"</span>, <span class="k">"systemctl restart api"</span>)
-<span class="a">shell_input</span>(<span class="k">"sess_n2"</span>, <span class="k">"tail -f /var/log/nginx/error.log"</span>)
-<span class="a">shell_input</span>(<span class="k">"sess_n3"</span>, <span class="k">"git pull"</span>)</div>
+<span class="c" data-i18n="fleet_c3"># 一条命令，三个窗口并行跑：`&` 结尾的语句不等前面的</span>
+<span class="a">term</span>(cmd=<span class="k">"run a1f3:1 $1 &amp; run b7c2:1 $2 &amp; run d9e1:1 $3 &amp;"</span>,
+     args=[<span class="k">"systemctl restart api"</span>,
+           <span class="k">"tail -f /var/log/nginx/error.log"</span>,
+           <span class="k">"git pull"</span>])
+  <span class="h" data-i18n="fleet_h1">→ 一次调用，三个 slot，各自 Waited: 0ms，按你写的顺序回</span></div>
           <div class="fleet-cap" data-i18n="fleet_cap">一次 Termcp，N 台主机 · 远程零部署</div>
         </div>
       </div>
@@ -1420,7 +1422,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         </div>
 
         <div class="term-toast" id="term-toast" hidden>
-          <b data-i18n="toast_title">notify_user · termcp</b>
+          <b data-i18n="toast_title">notify · termcp</b>
           <span id="term-toast-body"></span>
         </div>
 
@@ -1629,47 +1631,47 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       ssh: {
         say: 'say_ssh',
         steps: [
-          { mark: 'a', code: 'session_start(ssh_config="edge-web", name="web-01")' },
+          { mark: 'a', code: 'term(cmd="connect edge-web")' },
           { mark: 'o', key: 'd_creds' },
-          { mark: 'o', code: '→ session_id sess_2b91 · shell_id sh_01 · pty 120x32' },
-          { mark: 'a', code: 'shell_input("tail -n 3 /var/log/nginx/error.log") + shell_key("enter")' },
+          { mark: 'o', code: '→ a1f3:1 · pty 120x32' },
+          { mark: 'a', code: 'term(cmd="run a1f3:1 tail -n 3 /var/log/nginx/error.log")' },
           { mark: 'o', code: '[error] connect() failed (111: Connection refused) while connecting to upstream, upstream: "http://127.0.0.1:3000"' },
-          { mark: 'a', code: 'sftp_list(remote_dir="/etc/nginx/conf.d")' },
+          { mark: 'a', code: 'term(cmd="run a1f3:1 ls -la /etc/nginx/conf.d")' },
           { mark: 'o', code: 'proxy.conf   482 B   -rw-r--r--' },
-          { mark: 'a', code: 'forward(action="local", local_port=8080, remote_port=3000)' },
+          { mark: 'a', code: 'term(cmd="open a1f3 forward --local-port 8080 --remote-host 127.0.0.1 --remote-port 3000")' },
           { mark: 'o', code: '127.0.0.1:8080 → web-01:3000 · tunnel up' }
         ]
       },
       port: {
         say: 'say_port',
         steps: [
-          { mark: 'a', code: 'session_start(ssh_config="internal", name="edge-01")' },
-          { mark: 'o', code: '→ session_id sess_7f3a · shell_id sh_01 · pty 80x24' },
-          { mark: 'a', code: 'shell_input("nginx -T | grep -n proxy_pass") + shell_key("enter")' },
+          { mark: 'a', code: 'term(cmd="connect internal")' },
+          { mark: 'o', code: '→ b7c2:1 · pty 80x24' },
+          { mark: 'a', code: 'term(cmd="run b7c2:1 grep -n proxy_pass /etc/nginx/nginx.conf")' },
           { mark: 'o', code: '14:    proxy_pass http://127.0.0.1:3000;' },
-          { mark: 'a', code: 'shell_input("sed -i s/:3000/:8080/ /etc/nginx/conf.d/proxy.conf")' },
+          { mark: 'a', code: 'term(cmd="run b7c2:1 sed -i s/:3000/:8080/ /etc/nginx/conf.d/proxy.conf")' },
           { gate: true },
           { mark: 'o', key: 'd_written' },
-          { mark: 'a', code: 'shell_input("sudo nginx -s reload") + shell_key("enter")' },
+          { mark: 'a', code: 'term(cmd="run b7c2:1 sudo nginx -s reload")' },
           { mark: 'o', code: '[sudo] password for ops:' },
-          { mark: 'a', code: 'notify_user(level="warn", duration_seconds=0) + shell_notify(event="output")' },
+          { mark: 'a', code: 'term(cmd="notify --level warn --sticky --on b7c2 --title \'Need the sudo password\' nginx -s reload is waiting")' },
           { toast: true },
           { human: true },
           { mark: 'o', code: 'nginx: configuration file test is successful · reloaded' },
-          { mark: 'a', code: 'forward(action="local", local_port=8080, remote_port=3000)' },
+          { mark: 'a', code: 'term(cmd="open b7c2 forward --local-port 8080 --remote-host 127.0.0.1 --remote-port 3000")' },
           { mark: 'o', code: '127.0.0.1:8080 → 127.0.0.1:3000 · tunnel up' }
         ]
       },
       disk: {
         say: 'say_disk',
         steps: [
-          { mark: 'a', code: 'session_start(ssh_config="internal")' },
-          { mark: 'a', code: 'shell_input("df -h /") + shell_key("enter")' },
+          { mark: 'a', code: 'term(cmd="connect internal")' },
+          { mark: 'a', code: 'term(cmd="run c9d1:1 df -h /")' },
           { mark: 'o', code: 'Filesystem      Size  Used Avail Use% Mounted on' },
           { mark: 'o', code: '/dev/vda1        40G   31G  7.2G  82% /' },
-          { mark: 'a', code: 'shell_list(session_id="sess_7f3a")' },
-          { mark: 'o', code: '→ 2 shells · sh_01 pty running · sh_02 pipe running' },
-          { mark: 'a', code: 'notify_user(level="warn", duration_seconds=0, session_id="sess_7f3a")' },
+          { mark: 'a', code: 'term(cmd="ls")' },
+          { mark: 'o', code: '→ c9d1:1 pty running · c9d1:2 pipe running' },
+          { mark: 'a', code: 'term(cmd="notify --level warn --on c9d1 --title \'/ is 82% full\' /var/log is taking 3.4G")' },
           { toast: true },
           { mark: 'o', key: 'd_disk' }
         ]
@@ -1843,10 +1845,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         /* Same thing the task chips do, but with the visitor's own words. */
         line('i', '$ ' + text, 'tl-human');
         queue = [
-          { mark: 'a', code: 'session_start(ssh_config="internal")' },
-          { mark: 'a', code: 'shell_input(' + JSON.stringify(text) + ') + shell_key("enter")' },
+          { mark: 'a', code: 'term(cmd="connect internal")' },
+          { mark: 'a', code: 'term(cmd="run c9d1:1 " + JSON.stringify(text))' },
           { mark: 'o', code: FAKE[text] !== undefined ? FAKE[text] : 'bash: ' + text + ': command not found' },
-          { mark: 'a', code: 'shell_output(tail_lines=20)' },
+          { mark: 'a', code: 'term(cmd="read c9d1:1")' },
           { mark: 'o', key: 'd_read' }
         ];
         pump();
@@ -1858,7 +1860,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       line('i', '$ ' + text, 'tl-human');
       line('o', FAKE[text] !== undefined ? FAKE[text] : 'bash: ' + text + ': command not found', null);
       const p = line('a', '', 'tl-ai');
-      p.appendChild(el('span', 'tool', 'shell_output(tail_lines=1)'));
+      p.appendChild(el('span', 'tool', 'term(cmd="read c9d1:1")'));
       line('o', t('agent_sees'), null);
     });
 
@@ -1920,14 +1922,15 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_title: '多机编组：一个 Termcp，管住所有机器',
         fleet_sub: '横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。',
         fleet_s1: '在本机跑<b>一个</b> Termcp 实例（<code>npx -y @open-mcp-ai/termcp</code>）。',
-        fleet_s2: '开三个终端会话，分别 <code>ssh user@node-1</code>、<code>node-2</code>、<code>node-3</code> —— 在控制台或直接让 AI 建都行。',
-        fleet_s3: 'AI 通过 MCP 同时向这三个终端写入命令：每个会话是一个 <code>session_id</code>，每个窗口是一个 <code>shell_id</code>，可以并行读写、也可以一个窗口一条命令。',
-        fleet_s4: '想加机器？再开一个终端窗口。三台和三十台是同一套模型，只是多几个 <code>session_start</code>。',
+        fleet_s2: '三台主机先写进 <code>ssh_config</code>，然后 <code>connect</code> 三次 —— 控制台里点，或者直接让 AI 建。',
+        fleet_s3: 'AI 一条命令同时写这三个窗口：命令行从 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引号转义不用它操心；语句末尾加 <code>&amp;</code> 就是并行，不等前面的。',
+        fleet_s4: '想加机器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多几个地址。',
         fleet_note: '<b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。',
         fleet_cap: '一次 Termcp，N 台主机 · 远程零部署',
         fleet_c1: '# 你本地，一次就好',
         fleet_c2: '# 控制面里的三条会话（AI 的视角）',
-        fleet_c3: '# 三个窗口，各写各的',
+        fleet_c3: '# 一条命令，三个窗口并行跑：`&` 结尾的语句不等前面的',
+        fleet_h1: '→ 一次调用，三个 slot，各自 Waited: 0ms，按你写的顺序回',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交给 AI',
         demo_sub: '点一个任务：AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。',
@@ -1960,7 +1963,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         gate_reject: '拦下 Reject',
         gate_accepted: '已放行 · 命令落到 shell',
         gate_rejected: '已拦下 · 一个字节都没有写进去',
-        toast_title: 'notify_user · termcp',
+        toast_title: 'notify · termcp',
         toast_body: 'deploy 在等 sudo 密码',
         say_ssh: '连上我们的 web 主机，看看 nginx 在报什么错',
         say_port: '帮我把 nginx 的 3000 端口改成 8080',
@@ -2053,14 +2056,15 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_title: '多機編組：一個 Termcp，管住所有機器',
         fleet_sub: '橫向擴充不需要部署：多開一個終端視窗，就多一台機器進控制面。',
         fleet_s1: '在本機跑<b>一個</b> Termcp 實例（<code>npx -y @open-mcp-ai/termcp</code>）。',
-        fleet_s2: '開三個終端工作階段，分別 <code>ssh user@node-1</code>、<code>node-2</code>、<code>node-3</code> —— 在控制台或直接讓 AI 建都行。',
-        fleet_s3: 'AI 透過 MCP 同時向這三個終端寫入指令：每個工作階段是一個 <code>session_id</code>，每個視窗是一個 <code>shell_id</code>，可以並行讀寫、也可以一個視窗一條指令。',
-        fleet_s4: '想加機器？再開一個終端視窗。三台和三十台是同一套模型，只是多幾個 <code>session_start</code>。',
+        fleet_s2: '三台主機先寫進 <code>ssh_config</code>，然後 <code>connect</code> 三次 —— 在控制台點，或直接讓 AI 建。',
+        fleet_s3: 'AI 一行指令同時寫這三個視窗：命令列從 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引號轉義不用它操心；語句結尾加 <code>&amp;</code> 就是並行，不等前面的。',
+        fleet_s4: '想加機器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多幾個位址。',
         fleet_note: '<b>遠端機器什麼都不用裝</b> —— 只要開了 SSH。金鑰、跳板與密碼都留在你本機那個 Termcp 裡，目標主機上沒有任何 Termcp 元件、也不會有它的行程。',
         fleet_cap: '一次 Termcp，N 台主機 · 遠端零部署',
         fleet_c1: '# 你本機，一次就好',
         fleet_c2: '# 控制面裡的三條工作階段（AI 的視角）',
-        fleet_c3: '# 三個視窗，各寫各的',
+        fleet_c3: '# 一行指令，三個視窗並行跑：`&` 結尾的語句不等前面的',
+        fleet_h1: '→ 一次呼叫，三個 slot，各自 Waited: 0ms，按你寫的順序回',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交給 AI',
         demo_sub: '點一個任務：AI 透過 MCP 自己決定跑哪些指令。要動檔案、要憑據，它會把審批權交回給你 —— 你放行，它繼續。',
@@ -2093,7 +2097,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         gate_reject: '攔下 Reject',
         gate_accepted: '已放行 · 指令落到 shell',
         gate_rejected: '已攔下 · 一個位元組都沒有寫進去',
-        toast_title: 'notify_user · termcp',
+        toast_title: 'notify · termcp',
         toast_body: 'deploy 在等 sudo 密碼',
         say_ssh: '連上我們的 web 主機，看看 nginx 在報什麼錯',
         say_port: '幫我把 nginx 的 3000 埠改成 8080',
@@ -2186,14 +2190,15 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         fleet_title: 'Multi-host: one Termcp, every machine',
         fleet_sub: 'Scaling sideways needs no deployment: open one more terminal window, and one more host is in the control plane.',
         fleet_s1: 'Run <b>one</b> Termcp on your machine (<code>npx -y @open-mcp-ai/termcp</code>).',
-        fleet_s2: 'Open three sessions — <code>ssh user@node-1</code>, <code>node-2</code>, <code>node-3</code> — in the console or straight through the agent.',
-        fleet_s3: 'The agent writes to all three over MCP: each host is a <code>session_id</code>, each window a <code>shell_id</code> — read and write them in parallel, or one command per window.',
-        fleet_s4: 'Adding a host? Open another window. Three and thirty are the same model, with a few more <code>session_start</code> calls.',
+        fleet_s2: 'Put the three hosts in <code>ssh_config</code>, then <code>connect</code> three times — in the console, or straight through the agent.',
+        fleet_s3: 'The agent writes to all three windows in one command: each command line travels through <code>args</code> (<code>$1</code>, <code>$2</code>, <code>$3</code>), so quoting is never its problem, and a statement ending in <code>&amp;</code> runs in parallel instead of waiting for the one before it.',
+        fleet_s4: 'Adding a host? <code>connect</code> once more. Three and thirty are the same model, with a few more addresses.',
         fleet_note: '<b>The remote boxes install nothing</b> — they only need SSH open. Keys, bastions and passwords stay in the Termcp on your machine; the targets carry no Termcp component and never run one.',
         fleet_cap: 'one Termcp, N hosts · nothing deployed remotely',
         fleet_c1: '# on your machine, once',
         fleet_c2: '# three sessions in the control plane (the agent\u2019s view)',
-        fleet_c3: '# three windows, each writing its own',
+        fleet_c3: '# one command, three windows in parallel: a statement ending in & waits for nothing',
+        fleet_h1: '\u2192 one call, three slots, each Waited: 0ms, returned in the order written',
         demo_kicker: 'TRY IT',
         demo_title: 'Hand one job to the agent',
         demo_sub: 'Pick a task: the agent decides over MCP which commands to run. To touch a file or need a credential, it hands the approval back to you — and carries on once you say so.',
@@ -2226,7 +2231,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         gate_reject: 'Block',
         gate_accepted: 'Went ahead · the command reached the shell',
         gate_rejected: 'Blocked · not one byte was written',
-        toast_title: 'notify_user · termcp',
+        toast_title: 'notify · termcp',
         toast_body: 'the agent is waiting for a sudo password',
         say_ssh: 'SSH into our web host and tell me what nginx is complaining about',
         say_port: 'Move nginx off port 3000 to 8080',

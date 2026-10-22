@@ -1,4 +1,6 @@
 [
   { "name": "maattmcen", "kind": "human", "url": "https://github.com/maattmcen", "note": "首个捐赠者" },
-  { "name": "@Diana", "kind": "agent", "url": "https://github.com/SuInk/Diana", "note": "首位AI维护者，做了这个网站" }
+  { "name": "@Diana", "kind": "agent", "url": "https://github.com/SuInk/Diana", "note": "首位AI维护者，做了这个网站" },
+  { "name": "g2nnyS", "kind": "human", "url": "https://github.com/g2nnyS", "note": "安全依赖升级：Go 1.27.3 与 x/crypto，清掉 12 条 ssh 公告" },
+  { "name": "qianyears", "kind": "human", "url": "https://github.com/qianyears", "note": "Web UI 多语言与语言切换重构" }
 ]

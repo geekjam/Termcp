@@ -6,7 +6,7 @@
   <title>Termcp - 你的最后一个 MCP | Your Last MCP</title>
 
   <!-- SEO & Metadata -->
-  <meta name="description" content="Termcp：一个 MCP，统御所有机器上的所有 MCP。装多少都不吃上下文 —— 模型看到的工具列表永远只有 1 个；缺能力时，AI 现场写一个 MCP 装上直接用。单文件 10+MB。">
+  <meta name="description" content="Termcp：一个 MCP，统御所有机器上的所有 MCP。模型看到的工具列表永远只有 1 个 —— 装多少 MCP 都不增加工具定义；缺能力时，AI 自己开发一个 MCP，装上直接用。单文件 10+MB。">
   <meta name="keywords" content="Termcp, MCP 聚合, MCP hub, 动态安装 MCP, 跨主机 MCP, AI 自写 MCP, AI 运维平台, SSH MCP, 本地终端, 远程终端, 端口转发, SFTP, AI terminal, AI native, MCP, Model Context Protocol, MCP server, Claude Code, Codex, Gemini CLI, terminal control plane, human-in-the-loop, 终端MCP, 人机共驾, AI终端, 运维自动化, 渗透测试, 安全终端, 终端复用, session multiplexing, open-mcp-ai">
   <meta name="author" content="open-mcp-ai">
   <meta name="theme-color" content="#6EE2FF">
@@ -15,7 +15,7 @@
   <!-- Open Graph / Social Media -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Termcp - 你的最后一个 MCP">
-  <meta property="og:description" content="一个 MCP 统御所有机器和所有 MCP：跨主机安装、自己写自己装，装多少上下文都不涨。凭据留在 Termcp，不交给 AI。">
+  <meta property="og:description" content="一个 MCP 统御所有机器和所有 MCP：跨主机安装、自己开发自己装；装多少 MCP，模型看到的工具定义都还是 1 个。凭据留在 Termcp，不交给 AI。">
   <meta property="og:url" content="https://termcp.org">
 
   <!-- Machine-readable identity. The alternateName is the point: the tagline
@@ -403,6 +403,15 @@
       font-size: 14px;
       color: var(--text);
     }
+    .cmd-note {
+      margin: 0;
+      padding: 0 20px 14px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.7;
+      color: var(--text-faint);
+    }
+    .cmd-note b { color: var(--text-muted); font-weight: 600; }
     .cmd-text {
       min-width: 0;
       /* Wrap on every width: the docker command is ~1460px of text, and a
@@ -907,10 +916,25 @@
       /* No row gap: the heading's own margin is the only space between the two
          rows of column one, so the left column reads as one block. */
       column-gap: 26px;
-      align-items: start;
+      /* NOT `align-items: start`: the plate is the taller column, and a start
+         alignment keeps row two at its content height, so the plate overflows it
+         and the recipe has no slack to take up. Stretch lets the rows grow to the
+         plate and the recipe spread into the difference. */
+      align-items: stretch;
     }
     .fleet > .sec-head { grid-column: 1; grid-row: 1; margin-bottom: 26px; }
-    .fleet-steps { grid-column: 1; grid-row: 2; }
+    /* The plate is the taller column, so the recipe takes the slack: with
+       `space-between` its last line lands on the plate's caption line and the two
+       columns start and finish together, with no void left inside the code box. */
+    .fleet-steps {
+      grid-column: 1;
+      grid-row: 2;
+      align-self: stretch;
+    }
+    /* The claims sit tight under the heading; the note is the column's footer and
+       `margin-top: auto` pins it to the plate's bottom edge. Spreading all four
+       apart instead would leave three holes where the eye expects a list. */
+    .fleet-note { margin-top: auto; }
     /* The plate spans both rows, so its top edge meets the heading and its bottom
        meets the end of the recipe — the two columns start and finish together. */
     .fleet-plate {
@@ -937,7 +961,9 @@
       background: var(--accent-dim);
       border: 1px solid rgba(var(--accent-rgb), 0.3);
     }
-    .fleet-step p { font-size: 14.5px; color: var(--text-muted); }
+    /* These are claims now, not sentences: one line each, so they carry their own
+       weight instead of sitting at fine-print size. */
+    .fleet-step p { font-size: 15.5px; color: var(--text); }
     .fleet-step b { color: var(--text-bright); font-weight: 600; }
     .fleet-note {
       border-left: 2px solid rgba(82, 227, 164, 0.5);
@@ -1122,11 +1148,24 @@
       font-size: 12px;
       color: var(--text-faint);
     }
+    /* Same quiet line as the thanks above it, but the links have to be findable:
+       this is the page's only pointer to llms.txt. */
+    .foot-agent {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text-faint);
+    }
+    .foot-agent b { color: var(--text-muted); font-weight: 600; }
+    .foot-agent a { color: var(--text-muted); border-bottom: 1px solid var(--border-bright); text-decoration: none; }
+    .foot-agent a:hover { color: var(--accent); border-bottom-color: var(--accent); }
     .foot-thanks b { color: var(--text-muted); font-weight: 600; }
 
-    /* The code block needs ~460px to read without scrolling, so the two columns
-       fold into one well before the general mobile breakpoint. */
-    @media (max-width: 980px) {
+    /* The plate is 511px wide before anything scrolls (its longest line is the
+       three-way connect), so the two columns need 511 · 2 + the 26px gap — i.e.
+       about 1100px of viewport. Below that they fold into one, which gives the
+       plate the whole container and no sideways scrollbar. */
+    @media (max-width: 1100px) {
       .fleet { grid-template-columns: minmax(0, 1fr); }
       /* One column: the explicit placement has to go, or the plate stays in
          column two and overflows the page. */
@@ -1206,7 +1245,7 @@
 
   <main class="container">
     <section class="hero">
-      <div class="hero-pill" data-i18n="hero_pill">AI NATIVE CONTROL PLANE · MCP + SKILLS + API</div>
+      <div class="hero-pill" data-i18n="hero_pill">AI NATIVE CONTROL PLANE · MCP</div>
       <h1 class="highlight" data-i18n="hero_title">你的最后一个 MCP</h1>
       <p class="lead" data-i18n-html="hero_desc">一个 MCP <strong>统御</strong> 所有机器和所有 MCP。</p>
       <p class="motto">Termcp: The Terminus MCP · one for all, all for one</p>
@@ -1228,7 +1267,7 @@
            The second chip is not another SSH chip — the transport is already
            stated above; this one names the reach. -->
       <div class="targets">
-        <span class="target-chip"><b>1&nbsp;MCP&nbsp;TOOL</b><span data-i18n="chip_ctx_desc">AI 可自行安装/编写 不限个数MCP，即刻生效。</span></span>
+        <span class="target-chip"><b>1&nbsp;MCP&nbsp;TOOL</b><span data-i18n="chip_ctx_desc">AI 可自行安装/开发 不限个数MCP，即刻生效。</span></span>
         <span class="target-chip"><b>ANY&nbsp;HOST</b><span data-i18n="chip_hosts_desc">跨主机安装使用 MCP，和自己机器一样</span></span>
       </div>
 
@@ -1246,12 +1285,16 @@
           <div class="cmd-text"><span class="prompt" hidden>$</span><span id="cmd-display" class="quoted">把 'npx -y @open-mcp-ai/termcp daemon stdio' 装成名为 termcp 的 MCP</span></div>
           <button class="copy-btn" id="copy-btn" data-i18n="copy_btn">复制命令</button>
         </div>
+        <!-- Per-tab caveat. The Docker line pairs --disable-auth with a 127.0.0.1
+             bind, and a reader who copies it to a reachable address would expose
+             an unauthenticated console: the note says which half makes it safe. -->
+        <p class="cmd-note" id="cmd-note" hidden></p>
       </div>
 
       <!-- Below the install box: the reader has just seen how to run it, so the
            two sentences that say what it is land here, as the frame around the
            whole page rather than an interruption to the pitch. -->
-      <p class="hero-manifesto" data-i18n-html="hero_manifesto">无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己写 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span></p>
+      <p class="hero-manifesto" data-i18n-html="hero_manifesto">无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己开发 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span></p>
       <p class="hero-claim" data-i18n="hero_claim">装一次。以后每一台机器、每一个 MCP，都归它管。</p>
     </section>
 
@@ -1275,13 +1318,13 @@
         <div class="cap">
           <span class="cap-num">02</span>
           <h3 data-i18n="dyn2_title">跨主机，走 SSH</h3>
-          <p data-i18n="dyn2_desc">MCP 在别的机器上？SSH 直接调用，目标机零安装。</p>
+          <p data-i18n="dyn2_desc">MCP 在别的机器上？SSH 直接调用，目标机不装 Termcp。</p>
         </div>
 
         <div class="cap">
           <span class="cap-num">03</span>
-          <h3 data-i18n="dyn3_title">AI 自己写自己装</h3>
-          <p data-i18n="dyn3_desc">缺能力就造：现场写一个 MCP，装上自己用 —— 写和装都要过审批门。</p>
+          <h3 data-i18n="dyn3_title">AI 自己开发自己装</h3>
+          <p data-i18n="dyn3_desc">缺能力就造：自己开发一个 MCP，装上自己用（可开启人工审批）。</p>
         </div>
 
         <div class="cap">
@@ -1308,7 +1351,7 @@
                data-i18n-alt="ext_alt" alt="Termcp 扩展面板：装了哪些 MCP、装在哪台机器上、现在能不能用">
           <img class="shot-img" id="ext-en" width="2531" height="1161"
                data-src="ext-en.jpg" decoding="async" loading="lazy" hidden
-               data-i18n-alt="ext_alt" alt="Termcp extensions panel: which MCPs are mounted, which host each one runs on, and whether it is available">
+               data-i18n-alt="ext_alt" alt="Termcp extensions panel: which MCPs are installed, which host each one runs on, and whether it is available">
         </a>
         <figcaption class="shot-cap">
           <span data-i18n="ext_cap">打开 http://127.0.0.1:18765：装了什么、装在哪、能不能用，都在这一屏。</span>
@@ -1348,7 +1391,7 @@
         <div class="cap">
           <span class="cap-num">04</span>
           <h3 data-i18n="cap4_title">关键任务，审批权交给人类</h3>
-          <p data-i18n="cap4_desc">AI 的每一次写入都能停下来，把审批权交给人类 —— Termcp 提供那道闸门。放行是你的决定，拦下也是。</p>
+          <p data-i18n="cap4_desc">审批模式由你开启：开启后 AI 到关键处会停下来，把审批权交给你。放行是你的决定，拦下也是。</p>
         </div>
       </div>
     </section>
@@ -1357,9 +1400,9 @@
          a Chinese reader and an English reader each see their own UI. -->
     <section class="section" id="preview">
       <div class="sec-head">
-        <div class="sec-kicker" data-i18n="shot_kicker">LIVE UI</div>
+        <div class="sec-kicker" data-i18n="shot_kicker">CONSOLE</div>
         <h2 class="sec-title" data-i18n="shot_title">控制台：本地与 SSH 会话，都在这一屏</h2>
-        <p class="sec-note" data-i18n="shot_note">被控机仅需开启 SSH，无需额外安装。</p>
+        <p class="sec-note" data-i18n="shot_note">被控机只需要 SSH —— 上面不装任何 Termcp 组件。</p>
         <p class="sec-sub" data-i18n="shot_sub">每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。</p>
       </div>
       <figure class="shot-frame">
@@ -1384,7 +1427,7 @@
           <span class="shot-hint" data-i18n="shot_zoom">点击查看原图 ↗</span>
         </figcaption>
       </figure>
-      <p class="shot-relay" data-i18n-html="shot_relay">目标机连 SSH 都没有？装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，<b>装完即可被 Termcp 接入</b>，无需其它依赖。</p>
+      <p class="shot-relay" data-i18n-html="shot_relay">目标机没有 SSH？那就在它上面装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，装完即可被 Termcp 接入。</p>
     </section>
 
     <!-- The lightest multi-machine use, spelled out: one local Termcp, N SSH
@@ -1399,47 +1442,42 @@
              two columns reads as a third block that belongs to neither. -->
         <div class="sec-head">
           <div class="sec-kicker" data-i18n="fleet_kicker">MULTI-HOST</div>
-          <h2 class="sec-title" data-i18n="fleet_title">多机编组：一个 Termcp，管住所有机器</h2>
-          <p class="sec-sub" data-i18n="fleet_sub">横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。</p>
+          <h2 class="sec-title" data-i18n="fleet_title">多台主机，AI 自动管理</h2>
+          <p class="sec-sub" data-i18n="fleet_sub">并行控制无压力</p>
         </div>
 
         <div class="fleet-steps">
           <div class="fleet-step">
             <span class="n">1</span>
-            <p data-i18n-html="fleet_s1">在本机跑<b>一个</b> Termcp 实例（<code>npx -y @open-mcp-ai/termcp</code>）。</p>
+            <p data-i18n="fleet_s1">AI 调用凭据</p>
           </div>
           <div class="fleet-step">
             <span class="n">2</span>
-            <p data-i18n-html="fleet_s2">三台主机先写进 <code>ssh_config</code>，然后 <code>connect</code> 三次 —— 控制台里点，或者直接让 AI 建。</p>
+            <p data-i18n="fleet_s2">创建多个连接</p>
           </div>
           <div class="fleet-step">
             <span class="n">3</span>
-            <p data-i18n-html="fleet_s3">AI 一条命令同时写这三个窗口：命令行从 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引号转义不用它操心；语句末尾加 <code>&amp;</code> 就是并行，不等前面的。</p>
+            <p data-i18n="fleet_s3">并行发送命令</p>
           </div>
-          <div class="fleet-step">
-            <span class="n">4</span>
-            <p data-i18n-html="fleet_s4">想加机器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多几个地址。</p>
-          </div>
-          <p class="fleet-note" data-i18n-html="fleet_note"><b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。</p>
+          <p class="fleet-note" data-i18n-html="fleet_note"><b>服务器保持干净</b> —— 只需要 SSH</p>
         </div>
 
         <div class="fleet-plate">
-          <div class="fleet-code"><span class="c" data-i18n="fleet_c1"># 你本地，一次就好</span>
-$ <span class="k">npx -y @open-mcp-ai/termcp</span>
-  <span class="h">→ http://127.0.0.1:18765</span>
+          <div class="fleet-code"><span class="c" data-i18n="fleet_c1"># 列出主机，凭据在你本机</span>
+<span class="a">term</span>(cmd=<span class="k">"ls host"</span>)
+  <span class="h" data-i18n="fleet_h_list">→ node-1 · node-2 · node-3</span>
 
-<span class="c" data-i18n="fleet_c2"># 控制面里的三条会话（AI 的视角）</span>
-<span class="a">term</span>(cmd=<span class="k">"connect node-1"</span>)  <span class="h">→ a1f3:1</span>
-<span class="a">term</span>(cmd=<span class="k">"connect node-2"</span>)  <span class="h">→ b7c2:1</span>
-<span class="a">term</span>(cmd=<span class="k">"connect node-3"</span>)  <span class="h">→ d9e1:1</span>
+<span class="c" data-i18n="fleet_c2"># 连三台，也并行</span>
+<span class="a">term</span>(cmd=<span class="k">"connect node-1 &amp; connect node-2 &amp; connect node-3 &amp;"</span>)
+  <span class="h" data-i18n="fleet_h0">→ a1f3:1 · b7c2:1 · d9e1:1</span>
 
-<span class="c" data-i18n="fleet_c3"># 一条命令，三个窗口并行跑：`&` 结尾的语句不等前面的</span>
+<span class="c" data-i18n="fleet_c3"># 一条指令，三台同时跑</span>
 <span class="a">term</span>(cmd=<span class="k">"run a1f3:1 $1 &amp; run b7c2:1 $2 &amp; run d9e1:1 $3 &amp;"</span>,
      args=[<span class="k">"systemctl restart api"</span>,
            <span class="k">"tail -f /var/log/nginx/error.log"</span>,
            <span class="k">"git pull"</span>])
-  <span class="h" data-i18n="fleet_h1">→ 一次调用，三个 slot，各自 Waited: 0ms，按你写的顺序回</span></div>
-          <div class="fleet-cap" data-i18n="fleet_cap">一次 Termcp，N 台主机 · 远程零部署</div>
+  <span class="h" data-i18n="fleet_h1">→ bytes 0-0/0 · bytes 0-96/97 · bytes 0-14/15</span></div>
+          <div class="fleet-cap" data-i18n="fleet_cap">*此为 AI 上下文</div>
         </div>
       </div>
     </section>
@@ -1449,7 +1487,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       <div class="sec-head">
         <div class="sec-kicker" data-i18n="demo_kicker">TRY IT</div>
         <h2 class="sec-title" data-i18n="demo_title">挑一件事，交给 AI</h2>
-        <p class="sec-sub" data-i18n="demo_sub">点一个任务：AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。</p>
+        <p class="sec-sub" data-i18n="demo_sub">回放真实调用：点一个任务，AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。</p>
       </div>
 
       <div class="terminal-window">
@@ -1463,7 +1501,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
             <button type="button" class="review-lock" id="review-lock" aria-pressed="true"
                     data-i18n="review_lock" data-i18n-title="review_lock_title"
                     title="打开时，AI 把关键任务的审批权交给你；关掉，就是你把权力交还给 AI。">审阅模式 ON</button>
-            <span class="term-status" data-i18n="term_status">实时 · MCP 已连接</span>
+            <span class="term-status" data-i18n="term_status">回放 · 真实调用</span>
           </div>
         </div>
 
@@ -1512,13 +1550,13 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     <section class="section" id="security">
       <div class="security">
         <div class="sec-kicker" data-i18n="sec_kicker">SECURITY MODEL</div>
-        <h2 class="sec-title" data-i18n="sec_title">凭据归 Termcp，不归 AI</h2>
-        <p class="security-lede" data-i18n-html="sec_lede">Termcp 保管 SSH 登录所需的密码、私钥等认证信息。<strong>不会交给 AI，也不会泄漏。</strong>这些凭据只存在你本地那个 Termcp 实例上，远程主机对此一无所知。</p>
+        <h2 class="sec-title" data-i18n="sec_title">凭据保密，AI 不会知道</h2>
+        <p class="security-lede" data-i18n-html="sec_lede">Termcp 保管 SSH 登录所需的密码、私钥等认证信息。</p>
 
         <div class="security-grid">
           <div>
             <h4 data-i18n="sec1_title">凭据只存在本地实例</h4>
-            <p data-i18n="sec1_desc">写进 ssh_config 的密码、私钥与口令只留在你运行 Termcp 的那台机器上，读接口只返回 profile 名，永不回读明文；远程主机上没有任何 Termcp 组件。</p>
+            <p data-i18n="sec1_desc">写进 Termcp 凭据管理的密码、私钥与口令只留在你运行 Termcp 的那台机器上，读接口只返回配置名，永不回读明文；远程主机上没有任何 Termcp 组件。</p>
           </div>
           <div>
             <h4 data-i18n="sec2_title">密码不进模型上下文</h4>
@@ -1597,6 +1635,11 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       <!-- The primary user of a terminal control plane is an agent, so the
            agents get the credit. -->
       <p class="foot-thanks" data-i18n-html="foot_thanks">感谢 <b>AI 用户</b> —— 这个工具本来就是造给你们的。</p>
+      <!-- The agent-facing note lives here because this is where an agent that
+           read the page to the end looks: it names llms.txt (the only entry point
+           to it on the page) and states what a refused call means, so a model does
+           not retry a 403 forever. -->
+      <p class="foot-agent" data-i18n-html="agent_note"><b>AI 读者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 纯文本摘要 <a href="/llms.txt">llms.txt</a> · 白名单之外的调用会被拒绝，不要重试也不要绕过；写入与安装走审批门。</p>
     </div>
   </footer>
 
@@ -1618,6 +1661,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     const tabs = document.querySelectorAll('.cmd-tab');
     const display = document.getElementById('cmd-display');
     const cmdPrompt = document.querySelector('.cmd-text .prompt');
+    const cmdNote = document.getElementById('cmd-note');
     let activeCmd = 'ai';
     /* The exact bytes the copy button hands over. Kept apart from the rendered
        text so the quotes the AI tab draws can never travel with it. */
@@ -1633,6 +1677,10 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       currentCmdText = isAI ? t('cmd_ai') : (commands[key] || '');
       display.textContent = currentCmdText;
       display.classList.toggle('quoted', isAI);
+      /* A tab may carry a caveat that belongs with its own command. */
+      const note = key === 'docker' ? t('cmd_note_docker') : '';
+      cmdNote.textContent = note;
+      cmdNote.hidden = !note;
     }
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
@@ -1934,26 +1982,27 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     const i18nData = {
       'zh-CN': {
         auto_label: '🌐 自动',
-        hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
+        hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
         hero_title: '你的最后一个 MCP',
         hero_desc: '一个 MCP <strong>统御</strong> 所有机器和所有 MCP。',
-        hero_manifesto: '无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己写 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_manifesto: '无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己开发 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
         hero_claim: '装一次。以后每一台机器、每一个 MCP，都归它管。',
         target_platforms_title: 'Windows / Linux / macOS 都支持',
         target_local_desc: '多平台多架构兼容，单文件 10+MB · 无依赖',
         foot_thanks: '感谢 <b>AI 用户</b> —— 这个工具本来就是造给你们的。',
         target_ssh_tag: 'SSH',
         target_ssh_desc: '远程主机 · 内建 SSH 会话，密码不进模型上下文。',
-        chip_ctx_desc: 'AI 可自行安装/编写 不限个数MCP，即刻生效。',
+        chip_ctx_desc: 'AI 可自行安装/开发 不限个数MCP，即刻生效。',
         cmd_tab_ai: 'AI Install',
+        cmd_note_docker: '端口只绑在 127.0.0.1，所以这条命令关掉了鉴权。换成对外可达的地址，就把鉴权打开。',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 装成名为 termcp 的 MCP',
         chip_hosts_desc: '跨主机安装使用 MCP，和自己机器一样',
         copy_btn: '复制命令',
         copied: '已复制',
-        shot_kicker: 'LIVE UI',
+        shot_kicker: 'CONSOLE',
         shot_title: '控制台：本地与 SSH 会话，都在这一屏',
-        shot_note: '被控机仅需开启 SSH，无需额外安装。',
-        shot_relay: '目标机连 SSH 都没有？装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，<b>装完即可被 Termcp 接入</b>，无需其它依赖。',
+        shot_note: '被控机只需要 SSH —— 上面不装任何 Termcp 组件。',
+        shot_relay: '目标机没有 SSH？那就在它上面装 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一个独立的轻量 SSH 服务端，装完即可被 Termcp 接入。',
         shot_sub: '每一行按来源标色 —— 绿色是 shell 输出，黄色是你的输入，粉色是 AI 的调用。',
         shot_cap: '打开 http://127.0.0.1:18765，所有会话都在这里。',
         shot_zoom: '点击查看原图 ↗',
@@ -1966,9 +2015,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         dyn1_title: '动态安装，装完即用',
         dyn1_desc: '一条指令装完，下一次调用就在用它。',
         dyn2_title: '跨主机，走 SSH',
-        dyn2_desc: 'MCP 在别的机器上？SSH 直接调用，目标机零安装。',
-        dyn3_title: 'AI 自己写自己装',
-        dyn3_desc: '缺能力就造：现场写一个 MCP，装上自己用 —— 写和装都要过审批门。',
+        dyn2_desc: 'MCP 在别的机器上？SSH 直接调用，目标机不装 Termcp。',
+        dyn3_title: 'AI 自己开发自己装',
+        dyn3_desc: '缺能力就造：自己开发一个 MCP，装上自己用（可开启人工审批）。',
         agent_note: '<b>AI 读者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 纯文本摘要 <a href="/llms.txt">llms.txt</a> · 白名单之外的调用会被拒绝，不要重试也不要绕过；写入与安装走审批门。',
         dyn4_title: '装多少，上下文都不涨',
         dyn4_desc: '1 个 MCP TOOL，增长没有代价，只有能力。',
@@ -1985,25 +2034,26 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap3_title: 'SSH 精细化控制',
         cap3_desc: '包括连接实时创建端口转发，SFTP 文件管理，终端的实时读写，多路复用 shell。',
         cap4_title: '关键任务，审批权交给人类',
-        cap4_desc: 'AI 的每一次写入都能停下来，把审批权交给人类 —— Termcp 提供那道闸门。放行是你的决定，拦下也是。',
+        cap4_desc: '审批模式由你开启：开启后 AI 到关键处会停下来，把审批权交给你。放行是你的决定，拦下也是。',
         fleet_kicker: 'MULTI-HOST',
-        fleet_title: '多机编组：一个 Termcp，管住所有机器',
-        fleet_sub: '横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。',
-        fleet_s1: '在本机跑<b>一个</b> Termcp 实例（<code>npx -y @open-mcp-ai/termcp</code>）。',
-        fleet_s2: '三台主机先写进 <code>ssh_config</code>，然后 <code>connect</code> 三次 —— 控制台里点，或者直接让 AI 建。',
-        fleet_s3: 'AI 一条命令同时写这三个窗口：命令行从 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引号转义不用它操心；语句末尾加 <code>&amp;</code> 就是并行，不等前面的。',
-        fleet_s4: '想加机器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多几个地址。',
-        fleet_note: '<b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。',
-        fleet_cap: '一次 Termcp，N 台主机 · 远程零部署',
-        fleet_c1: '# 你本地，一次就好',
-        fleet_c2: '# 控制面里的三条会话（AI 的视角）',
-        fleet_c3: '# 一条命令，三个窗口并行跑：`&` 结尾的语句不等前面的',
-        fleet_h1: '→ 一次调用，三个 slot，各自 Waited: 0ms，按你写的顺序回',
+        fleet_title: '多台主机，AI 自动管理',
+        fleet_h0: '→ a1f3:1 · b7c2:1 · d9e1:1',
+        fleet_sub: '并行控制无压力',
+        fleet_s1: 'AI 调用凭据',
+        fleet_s2: '创建多个连接',
+        fleet_s3: '并行发送命令',
+        fleet_note: '<b>服务器保持干净</b> —— 只需要 SSH',
+        fleet_cap: '*此为 AI 上下文',
+        fleet_c1: '# 列出主机，凭据在你本机',
+        fleet_h_list: '→ node-1 · node-2 · node-3',
+        fleet_c2: '# 连三台，也并行',
+        fleet_c3: '# 一条指令，三台同时跑',
+        fleet_h1: '→ bytes 0-0/0 · bytes 0-96/97 · bytes 0-14/15',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交给 AI',
-        demo_sub: '点一个任务：AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。',
+        demo_sub: '回放真实调用：点一个任务，AI 通过 MCP 自己决定跑哪些命令。要动文件、要凭据，它会把审批权交回给你 —— 你放行，它继续。',
         term_title: 'nethub // 会话 #node-edge-01 [pts/3]',
-        term_status: '实时 · MCP 已连接',
+        term_status: '回放 · 真实调用',
         legend_a: 'a · AI 调用 MCP',
         legend_i: 'i · 你的输入',
         legend_o: 'o · 终端输出',
@@ -2036,17 +2086,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         say_ssh: '连上我们的 web 主机，看看 nginx 在报什么错',
         say_port: '帮我把 nginx 的 3000 端口改成 8080',
         say_disk: '这台机器磁盘还够用吗',
-        d_creds: '凭据来自 Termcp 的 ssh_config（密码/私钥）· 未进入模型上下文',
+        d_creds: '凭据由 Termcp 保管（密码/私钥）· 未进入模型上下文',
         d_read: '读回字节区间 [0, 4096) · 标记：o 输出 / i 你的输入 / a AI',
         d_written: '写入完成 · 代理目标已从 :3000 改为 :8080',
         d_sudo_ok: '密码通过 · nginx 已重载',
         d_disk: '结论：/ 用了 82%，/var/log 占了 3.4G —— 已通知你。',
         agent_sees: 'AI 读回了你刚才那行 —— 它和你共用同一条 shell。',
         sec_kicker: 'SECURITY MODEL',
-        sec_title: '凭据归 Termcp，不归 AI',
-        sec_lede: 'Termcp 保管 SSH 登录所需的密码、私钥等认证信息。<strong>不会交给 AI，也不会泄漏。</strong>这些凭据只存在你本地那个 Termcp 实例上，远程主机对此一无所知。',
+        sec_title: '凭据保密，AI 不会知道',
+        sec_lede: 'Termcp 保管 SSH 登录所需的密码、私钥等认证信息。',
         sec1_title: '凭据只存在本地实例',
-        sec1_desc: '写进 ssh_config 的密码、私钥与口令只留在你运行 Termcp 的那台机器上，读接口只返回 profile 名，永不回读明文；远程主机上没有任何 Termcp 组件。',
+        sec1_desc: '写进 Termcp 凭据管理的密码、私钥与口令只留在你运行 Termcp 的那台机器上，读接口只返回配置名，永不回读明文；远程主机上没有任何 Termcp 组件。',
         sec2_title: '密码不进模型上下文',
         sec2_desc: '遇到 sudo 密码、MFA 或 [Y/n]，Termcp 把提示交回给人：你在浏览器里输入，它留在那条 shell 里。',
         sec3_title: '审阅模式：关键任务交回给你',
@@ -2070,26 +2120,27 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       },
       'zh-TW': {
         auto_label: '🌐 自動',
-        hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
+        hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
         hero_title: '你的最後一個 MCP',
         hero_desc: '一個 MCP <strong>統御</strong> 所有機器和所有 MCP。',
-        hero_manifesto: '無視上下文和機器限制，MCP 自由擴充。讓你的 AI 自己寫 MCP，裝上自己用。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_manifesto: '無視上下文和機器限制，MCP 自由擴充。讓你的 AI 自己開發 MCP，裝上自己用。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
         hero_claim: '裝一次。以後每一台機器、每一個 MCP，都歸它管。',
         target_platforms_title: 'Windows / Linux / macOS 皆支援',
         target_local_desc: '多平台多架構相容，單一檔案 10+MB · 無依賴',
         foot_thanks: '感謝 <b>AI 使用者</b> —— 這個工具本來就是造給你們的。',
         target_ssh_tag: 'SSH',
         target_ssh_desc: '遠端主機 · 內建 SSH 工作階段，密碼不進模型上下文。',
-        chip_ctx_desc: 'AI 可自行安裝／編寫 不限個數 MCP，即刻生效。',
+        chip_ctx_desc: 'AI 可自行安裝／開發 不限個數 MCP，即刻生效。',
         cmd_tab_ai: 'AI Install',
+        cmd_note_docker: '連接埠只綁在 127.0.0.1，所以這條指令關掉了鑑權。換成對外可達的位址，就把鑑權打開。',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 裝成名為 termcp 的 MCP',
         chip_hosts_desc: '跨主機安裝使用 MCP，和自己機器一樣',
         copy_btn: '複製指令',
         copied: '已複製',
-        shot_kicker: 'LIVE UI',
+        shot_kicker: 'CONSOLE',
         shot_title: '控制台：本機與 SSH 工作階段，都在這一屏',
-        shot_note: '被控機僅需開啟 SSH，無需額外安裝。',
-        shot_relay: '目標機連 SSH 都沒有？裝 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一個獨立的輕量 SSH 服務端，<b>裝完即可被 Termcp 接入</b>，無需其它相依。',
+        shot_note: '被控機只需要 SSH —— 上面不裝任何 Termcp 元件。',
+        shot_relay: '目標機沒有 SSH？那就在它上面裝 <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> —— 一個獨立的輕量 SSH 服務端，裝完即可被 Termcp 接入。',
         shot_sub: '每一行按來源標色 —— 綠色是 shell 輸出，黃色是你的輸入，粉色是 AI 的呼叫。',
         shot_cap: '打開 http://127.0.0.1:18765，所有工作階段都在這裡。',
         shot_zoom: '點擊看原圖 ↗',
@@ -2102,9 +2153,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         dyn1_title: '動態安裝，裝完即用',
         dyn1_desc: '一行指令裝完，下一次呼叫就在用它。',
         dyn2_title: '跨主機，走 SSH',
-        dyn2_desc: 'MCP 在別的機器上？SSH 直接呼叫，目標機零安裝。',
-        dyn3_title: 'AI 自己寫自己裝',
-        dyn3_desc: '缺能力就造：現場寫一個 MCP，裝上自己用 —— 寫和裝都要過審批門。',
+        dyn2_desc: 'MCP 在別的機器上？SSH 直接呼叫，目標機不裝 Termcp。',
+        dyn3_title: 'AI 自己開發自己裝',
+        dyn3_desc: '缺能力就造：自己開發一個 MCP，裝上自己用（可開啟人工審批）。',
         agent_note: '<b>AI 讀者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 純文字摘要 <a href="/llms.txt">llms.txt</a> · 白名單之外的呼叫會被拒絕，不要重試也不要繞過；寫入與安裝走審批門。',
         dyn4_title: '裝多少，上下文都不漲',
         dyn4_desc: '1 個 MCP TOOL，增長沒有代價，只有能力。',
@@ -2121,25 +2172,26 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap3_title: 'SSH 精細化控制',
         cap3_desc: '包含連線即時建立連接埠轉發，SFTP 檔案管理，終端的即時讀寫，多工 shell。',
         cap4_title: '關鍵任務，審批權交給人類',
-        cap4_desc: 'AI 的每一次寫入都能停下來，把審批權交給人類 —— Termcp 提供那道閘門。放行是你的決定，攔下也是。',
+        cap4_desc: '審批模式由你開啟：開啟後 AI 到關鍵處會停下來，把審批權交給你。放行是你的決定，攔下也是。',
         fleet_kicker: 'MULTI-HOST',
-        fleet_title: '多機編組：一個 Termcp，管住所有機器',
-        fleet_sub: '橫向擴充不需要部署：多開一個終端視窗，就多一台機器進控制面。',
-        fleet_s1: '在本機跑<b>一個</b> Termcp 實例（<code>npx -y @open-mcp-ai/termcp</code>）。',
-        fleet_s2: '三台主機先寫進 <code>ssh_config</code>，然後 <code>connect</code> 三次 —— 在控制台點，或直接讓 AI 建。',
-        fleet_s3: 'AI 一行指令同時寫這三個視窗：命令列從 <code>args</code> 走（<code>$1</code>、<code>$2</code>、<code>$3</code>），引號轉義不用它操心；語句結尾加 <code>&amp;</code> 就是並行，不等前面的。',
-        fleet_s4: '想加機器？再 <code>connect</code> 一次。三台和三十台是同一套模型，只是多幾個位址。',
-        fleet_note: '<b>遠端機器什麼都不用裝</b> —— 只要開了 SSH。金鑰、跳板與密碼都留在你本機那個 Termcp 裡，目標主機上沒有任何 Termcp 元件、也不會有它的行程。',
-        fleet_cap: '一次 Termcp，N 台主機 · 遠端零部署',
-        fleet_c1: '# 你本機，一次就好',
-        fleet_c2: '# 控制面裡的三條工作階段（AI 的視角）',
-        fleet_c3: '# 一行指令，三個視窗並行跑：`&` 結尾的語句不等前面的',
-        fleet_h1: '→ 一次呼叫，三個 slot，各自 Waited: 0ms，按你寫的順序回',
+        fleet_title: '多台主機，AI 自動管理',
+        fleet_h0: '→ a1f3:1 · b7c2:1 · d9e1:1',
+        fleet_sub: '並行控制無壓力',
+        fleet_s1: 'AI 呼叫憑據',
+        fleet_s2: '建立多個連線',
+        fleet_s3: '並行送出指令',
+        fleet_note: '<b>伺服器保持乾淨</b> —— 只需要 SSH',
+        fleet_cap: '*此為 AI 上下文',
+        fleet_c1: '# 列出主機，憑據在你本機',
+        fleet_h_list: '→ node-1 · node-2 · node-3',
+        fleet_c2: '# 連三台，也並行',
+        fleet_c3: '# 一行指令，三台同時跑',
+        fleet_h1: '→ bytes 0-0/0 · bytes 0-96/97 · bytes 0-14/15',
         demo_kicker: 'TRY IT',
         demo_title: '挑一件事，交給 AI',
-        demo_sub: '點一個任務：AI 透過 MCP 自己決定跑哪些指令。要動檔案、要憑據，它會把審批權交回給你 —— 你放行，它繼續。',
+        demo_sub: '回放真實呼叫：點一個任務，AI 透過 MCP 自己決定跑哪些指令。要動檔案、要憑據，它會把審批權交回給你 —— 你放行，它繼續。',
         term_title: 'nethub // 工作階段 #node-edge-01 [pts/3]',
-        term_status: '即時 · MCP 已連線',
+        term_status: '回放 · 真實呼叫',
         legend_a: 'a · AI 呼叫 MCP',
         legend_i: 'i · 你的輸入',
         legend_o: 'o · 終端輸出',
@@ -2172,17 +2224,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         say_ssh: '連上我們的 web 主機，看看 nginx 在報什麼錯',
         say_port: '幫我把 nginx 的 3000 埠改成 8080',
         say_disk: '這台機器磁碟還夠用嗎',
-        d_creds: '憑據來自 Termcp 的 ssh_config（密碼/私鑰）· 未進入模型上下文',
+        d_creds: '憑據由 Termcp 保管（密碼/私鑰）· 未進入模型上下文',
         d_read: '讀回位元組區間 [0, 4096) · 標記：o 輸出 / i 你的輸入 / a AI',
         d_written: '寫入完成 · 代理目標已從 :3000 改為 :8080',
         d_sudo_ok: '密碼通過 · nginx 已重載',
         d_disk: '結論：/ 用了 82%，/var/log 佔了 3.4G —— 已通知你。',
         agent_sees: 'AI 讀回了你剛才那行 —— 它和你共用同一條 shell。',
         sec_kicker: 'SECURITY MODEL',
-        sec_title: '憑據歸 Termcp，不歸 AI',
-        sec_lede: 'Termcp 保管 SSH 登入所需的密碼、私鑰等認證資訊。<strong>不會交給 AI，也不會洩漏。</strong>這些憑據只存在你本機那個 Termcp 實例上，遠端主機對此一無所知。',
+        sec_title: '憑據保密，AI 不會知道',
+        sec_lede: 'Termcp 保管 SSH 登入所需的密碼、私鑰等認證資訊。',
         sec1_title: '憑據只存在本機實例',
-        sec1_desc: '寫進 ssh_config 的密碼、私鑰與口令只留在你執行 Termcp 的那台機器上，讀介面只回傳 profile 名，永不回讀明文；遠端主機上沒有任何 Termcp 元件。',
+        sec1_desc: '寫進 Termcp 憑據管理的密碼、私鑰與口令只留在你執行 Termcp 的那台機器上，讀介面只回傳設定名，永不回讀明文；遠端主機上沒有任何 Termcp 元件。',
         sec2_title: '密碼不進模型上下文',
         sec2_desc: '遇到 sudo 密碼、MFA 或 [Y/n]，Termcp 把提示交回給人：你在瀏覽器裡輸入，它留在那條 shell 裡。',
         sec3_title: '審閱模式：關鍵任務交回給你',
@@ -2206,31 +2258,32 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       },
       'en': {
         auto_label: '🌐 Auto',
-        hero_pill: 'AI NATIVE CONTROL PLANE · MCP + SKILLS + API',
+        hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
         hero_title: 'The last MCP you\u2019ll install',
         hero_desc: 'One MCP <strong>DOMINATES</strong> every machine and every MCP you own.',
-        hero_manifesto: 'Ignore the context limit and the machine limit \u2014 MCPs expand freely. Let your agent write an MCP and install it for its own use.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
+        hero_manifesto: 'Ignore the context limit and the machine limit — MCPs expand freely. Let your agent build an MCP of its own and install it.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
         hero_claim: 'Install once. After that, every machine and every MCP answers to it.',
         target_platforms_title: 'Runs on Windows, Linux and macOS',
         target_local_desc: 'multi-platform, multi-arch \u00b7 one 10+MB binary, no dependencies',
         foot_thanks: 'Thanks to every <b>AI user</b> \u2014 this thing was built for you in the first place.',
         target_ssh_tag: 'SSH',
         target_ssh_desc: 'remote hosts · built-in SSH sessions, secrets stay out of the model context',
-        chip_ctx_desc: 'the agent installs or writes any number of MCPs, live',
+        chip_ctx_desc: 'the agent installs or builds any number of MCPs, live',
         cmd_tab_ai: 'AI Install',
+        cmd_note_docker: 'The port is bound to 127.0.0.1 only, which is why this command turns auth off. Bind it anywhere reachable and turn auth back on.',
         cmd_ai: 'Install \'npx -y @open-mcp-ai/termcp daemon stdio\' as an MCP named termcp',
         chip_hosts_desc: 'install and use MCP across hosts, just like your own machine',
         copy_btn: 'Copy Command',
         copied: 'Copied',
-        shot_kicker: 'LIVE UI',
+        shot_kicker: 'CONSOLE',
         shot_title: 'The console: local and SSH sessions, one screen',
-        shot_note: 'The controlled host only needs SSH open \u2014 nothing else installed.',
-        shot_relay: 'No SSH on the target at all? Install <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> \u2014 a standalone lightweight SSH server. <b>Once it runs, Termcp can reach the host</b>, with no other dependencies.',
+        shot_note: 'The controlled host needs SSH and nothing else — no Termcp component on it.',
+        shot_relay: 'No SSH on the target? Then install <a href="https://github.com/open-mcp-ai/termcp-relay" target="_blank" rel="noopener">termcp-relay</a> on it — a small standalone SSH server that Termcp can then reach.',
         shot_sub: 'Every line is coloured by its source — green shell output, yellow your input, pink the agent\u2019s calls.',
         shot_cap: 'Open http://127.0.0.1:18765 — every session appears there.',
         shot_zoom: 'Click for full size ↗',
-        ext_cap: 'Open http://127.0.0.1:18765 \u2014 what is mounted, where it runs, and whether it is up, all on one screen.',
-        ext_alt: 'Termcp extensions panel: which MCPs are mounted, which host each one runs on, and whether it is available',
+        ext_cap: 'Open http://127.0.0.1:18765 \u2014 what is installed, where it runs, and whether it is up, all on one screen.',
+        ext_alt: 'Termcp extensions panel: which MCPs are installed, which host each one runs on, and whether it is available',
         shot_alt: 'Termcp console: local and SSH sessions on one screen, every line marked yours / the agent\u2019s / shell output',
         dyn_kicker: 'DYNAMIC MCP',
         dyn_title: 'One MCP, unlimited MCPs',
@@ -2238,12 +2291,12 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         dyn1_title: 'Install it live',
         dyn1_desc: 'One command, and the next call is already using it.',
         dyn2_title: 'Across hosts, over SSH',
-        dyn2_desc: 'An MCP on another machine? Call it over SSH. Nothing to install there.',
-        dyn3_title: 'The agent writes and installs its own',
-        dyn3_desc: 'Missing a capability? It builds one on the spot and installs it \u2014 both pass the approval gate.',
+        dyn2_desc: 'An MCP on another machine? Call it over SSH — the target runs no Termcp.',
+        dyn3_title: 'The agent builds and installs its own',
+        dyn3_desc: 'Missing a capability? It builds one itself and installs it (human approval can be switched on).',
         agent_note: '<b>For agents</b> · start at <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · plain-text summary <a href="/llms.txt">llms.txt</a> · calls outside the whitelist are refused: do not retry, do not work around them; writes and installs pass the approval gate.',
         dyn4_title: 'Install anything, context stays flat',
-        dyn4_desc: 'One tool. Growth costs nothing \u2014 only capability.',
+        dyn4_desc: 'One tool. Growth costs nothing — only capability.',
         dyn_shot_kicker: 'CYBERWARE',
         dyn_shot_title: 'Capability without end',
         dyn_shot_sub: 'MCP: CYBERWARE for your agent.',
@@ -2257,25 +2310,26 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         cap3_title: 'Fine-grained SSH control',
         cap3_desc: 'Port forwards created live on the connection, SFTP file management, real-time terminal read/write, multiplexed shells.',
         cap4_title: 'Critical tasks: the approval goes to the human',
-        cap4_desc: 'Every agent write can stop and hand the approval to the human — Termcp is the gate that makes it possible. Go ahead or block it: either way the decision is yours.',
+        cap4_desc: 'You switch approval mode on: with it on, the agent stops at anything critical and hands the approval to you. Go ahead or block it — either way the decision is yours.',
         fleet_kicker: 'MULTI-HOST',
-        fleet_title: 'Multi-host: one Termcp, every machine',
-        fleet_sub: 'Scaling sideways needs no deployment: open one more terminal window, and one more host is in the control plane.',
-        fleet_s1: 'Run <b>one</b> Termcp on your machine (<code>npx -y @open-mcp-ai/termcp</code>).',
-        fleet_s2: 'Put the three hosts in <code>ssh_config</code>, then <code>connect</code> three times — in the console, or straight through the agent.',
-        fleet_s3: 'The agent writes to all three windows in one command: each command line travels through <code>args</code> (<code>$1</code>, <code>$2</code>, <code>$3</code>), so quoting is never its problem, and a statement ending in <code>&amp;</code> runs in parallel instead of waiting for the one before it.',
-        fleet_s4: 'Adding a host? <code>connect</code> once more. Three and thirty are the same model, with a few more addresses.',
-        fleet_note: '<b>The remote boxes install nothing</b> — they only need SSH open. Keys, bastions and passwords stay in the Termcp on your machine; the targets carry no Termcp component and never run one.',
-        fleet_cap: 'one Termcp, N hosts · nothing deployed remotely',
-        fleet_c1: '# on your machine, once',
-        fleet_c2: '# three sessions in the control plane (the agent\u2019s view)',
-        fleet_c3: '# one command, three windows in parallel: a statement ending in & waits for nothing',
-        fleet_h1: '\u2192 one call, three slots, each Waited: 0ms, returned in the order written',
+        fleet_title: 'Many hosts, managed by the AI',
+        fleet_h0: '→ a1f3:1 · b7c2:1 · d9e1:1',
+        fleet_sub: 'Parallel control, no pressure',
+        fleet_s1: 'Credentials for the agent',
+        fleet_s2: 'As many connections as you need',
+        fleet_s3: 'Commands in parallel',
+        fleet_note: '<b>The server stays clean</b> — SSH is all it needs',
+        fleet_cap: '*this is the AI\'s context',
+        fleet_c1: '# list hosts, credentials on your machine',
+        fleet_h_list: '→ node-1 · node-2 · node-3',
+        fleet_c2: '# three connects, in parallel',
+        fleet_c3: '# one instruction, three hosts at once',
+        fleet_h1: '→ bytes 0-0/0 · bytes 0-96/97 · bytes 0-14/15',
         demo_kicker: 'TRY IT',
         demo_title: 'Hand one job to the agent',
-        demo_sub: 'Pick a task: the agent decides over MCP which commands to run. To touch a file or need a credential, it hands the approval back to you — and carries on once you say so.',
+        demo_sub: 'A replay of real calls: pick a task and the agent decides, over MCP, which commands to run. When it needs a file or a credential it hands the approval back to you — you let it through, it continues.',
         term_title: 'nethub // session #node-edge-01 [pts/3]',
-        term_status: 'LIVE · MCP CONNECTED',
+        term_status: 'REPLAY · REAL CALLS',
         legend_a: 'a · AI calls an MCP tool',
         legend_i: 'i · your input',
         legend_o: 'o · shell output',
@@ -2308,17 +2362,17 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         say_ssh: 'SSH into our web host and tell me what nginx is complaining about',
         say_port: 'Move nginx off port 3000 to 8080',
         say_disk: 'Is there enough disk left on this box',
-        d_creds: 'credentials come from Termcp\u2019s ssh_config (password / key) · never in the model\u2019s context',
+        d_creds: 'credentials live in Termcp (password / key) · never in the model\u2019s context',
         d_read: 'read back bytes [0, 4096) · marks: o output / i your input / a agent',
         d_written: 'written · the proxy target moved from :3000 to :8080',
         d_sudo_ok: 'password accepted · nginx reloaded',
         d_disk: 'Finding: / is 82% full, /var/log holds 3.4G — the human has been notified.',
         agent_sees: 'The agent read back what you just typed — it shares this shell with you.',
         sec_kicker: 'SECURITY MODEL',
-        sec_title: 'Credentials belong to Termcp, not to the model',
-        sec_lede: 'Termcp holds the passwords, private keys and other credentials SSH login needs. <strong>They are never handed to the agent, and they never leak.</strong> They live only in the Termcp instance on your machine; the remote hosts know nothing about them.',
+        sec_title: 'Credentials stay secret — the agent never knows them',
+        sec_lede: 'Termcp holds the passwords and keys SSH login needs.',
         sec1_title: 'Credentials stay on your instance',
-        sec1_desc: 'Passwords, keys and passphrases written through ssh_config stay on the machine running Termcp; the read interface returns profile names, never plaintext — and no remote target carries a Termcp component.',
+        sec1_desc: 'Passwords, keys and passphrases written through Termcp\u2019s credential store stay on the machine running Termcp; the read interface returns profile names, never plaintext — and no remote target carries a Termcp component.',
         sec2_title: 'Secrets skip the model',
         sec2_desc: 'At a sudo password, MFA or [Y/n] prompt, Termcp hands the prompt back to you: you type in the browser, and it stays in that shell.',
         sec3_title: 'Review mode: critical tasks, handed back to you',

@@ -1,66 +1,179 @@
 # Termcp
 
 > Termcp is an MCP server that installs other MCP servers. The model's tool list
-> stays at exactly one tool (`term`), however many MCPs are mounted — locally, or
-> on remote hosts reached over SSH. The agent can author a new MCP and install it
-> itself. Writes and installs pass a human approval gate.
+> stays at exactly one tool (`term`), however many MCPs are installed — locally,
+> or on remote hosts reached over SSH. The agent can develop a new MCP itself and
+> install it. Writes and installs pass a human approval gate.
 
 Canonical name: Termcp. Also written "Terminus MCP" (the tagline). Site:
 https://termcp.org · Repo: https://github.com/open-mcp-ai/termcp · License: MIT.
 
 ## Facts
 
-- One MCP tool is published: `term`. Extensions do not add tools to the tool list;
-  they are driven through `term`'s directives. This is the design intent, not an
-  implementation detail (see `internal/mcp/term_register.go`).
+- One MCP tool is published: `term`. Installing extensions does not add entries to
+  the tool list; they are driven through `term`'s directives (see
+  `internal/mcp/term_register.go`).
+- What stays flat is the tool DEFINITION the model sees. A call's result enters the
+  context like any other tool result — the claim is about the tool list, not about
+  the total context.
 - Install:
   - `claude mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio`
-  - `go install github.com/open-mcp-ai/termcp@latest`
-  - Docker image, or a single static binary from the releases page.
-- Distribution: a single static binary, ~12MB (10+MB), no runtime dependencies.
-  macOS / Linux / Windows, amd64 and arm64 (Apple Silicon, Windows ARM64). UPX
-  compresses a build to roughly a third of its size — measured: a Windows v0.2.7
-  build 11.8MB -> 3.4MB, a current dev Linux build 15.4MB -> 4.7MB. UPX support
-  for signed macOS arm64 binaries is not guaranteed.
-- Remote hosts need only SSH. Credentials (passwords, private keys, passphrases)
-  live in the local Termcp instance and are never handed to the model.
+  - `codex mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio`
+  - `go install github.com/open-mcp-ai/termcp@latest`, a Docker image, or a single
+    static binary from the releases page.
+- Distribution: one static binary, ~12MB (the site's "10+MB"), no runtime
+  dependencies. macOS / Linux / Windows, amd64 and arm64. UPX compresses a build to
+  roughly a third — measured: Windows v0.2.7 11.8MB -> 3.4MB (the site's "5MB 以内"),
+  dev Linux 15.4MB -> 4.7MB. UPX support for signed macOS arm64 binaries is not
+  guaranteed.
+- Remote hosts need only SSH. Credentials live in the local Termcp instance and are
+  never handed to the model. Nothing of Termcp runs on the target.
 - Extensions (`kind` = `mcp` | `skill` | `prompt` | `custom`) are pinned,
   capability-trimmed sessions kept warm and restarted automatically:
-  - `mcp`: a stdio MCP server (`command` + `args`) or an HTTP/SSE endpoint (`url`,
-    relayed in-process — no second binary on the target).
+  - `mcp`: a stdio MCP server (`command` + `args`) or an HTTP/SSE endpoint (`url`).
   - `skill`: a read-only window onto remote files, scoped by a `paths` whitelist.
   - `prompt`: an interactive terminal with operating instructions attached.
-  - `target` is an ssh_config profile name, or `internal` for loopback. Mounting
-    an MCP that runs on another machine is the same template with a different
-    `target`.
+  - `target` is a profile name (see "ssh_config" below), or `internal` for loopback.
+    The same template with a different `target` is the same MCP on another machine.
 - Extensions that dial the same host with the same whitelist share one connection,
   each driving its own shell channel.
+
+## `cmd` is a shell-like DSL — NOT a shell
+
+This is the single thing most callers get wrong.
+
+- `cmd` holds DIRECTIVES only. A shell command enters as a VALUE — through `args`
+  (`$1`, `$2`, … `${10}`) or `vars` (`$NAME`) — never as syntax.
+- `&&`, `||`, `;` and `&` are DIRECTIVE separators, parsed by Termcp:
+  - `;` — run the next statement regardless
+  - `&&` — run the next statement only if this one answered 2xx
+  - `||` — run the next statement only if this one did NOT answer 2xx
+  - `&` — run this statement in PARALLEL: it does not wait for the statements
+    around it. The reply still lists every slot in the order you wrote them, each
+    with its own byte cursor (`Content-Range`). `&` is not "background job output
+    you will read later".
+  - A skipped statement still appears in the reply, as a slot with 208.
+- `|`, `>`, `>>` and `<` are NOT Termcp operators. Inside a `run`/`type` payload
+  they belong to the shell, because that payload IS a shell line.
+- Two spellings of the same intent, and only one of them is what you want:
+
+  ```
+  run a1f3:1 $1     args: ["make && test"]     one shell line (the && is the shell's)
+  run a1f3:1 make && notify done               two cmd statements (the && is Termcp's)
+  ```
+
+- Positional values (`args`):
+  - A `$N` that IS the whole payload of `run`/`type` is spliced VERBATIM: that is
+    how `pwd; whoami` reaches the terminal as two commands.
+  - A `$N` anywhere else (beside other words, in a flag value, in a target) is
+    substituted as ONE QUOTED WORD, so a value can never turn into syntax you did
+    not write.
+  - `vars` values are ALWAYS one quoted word: `vars` is the data channel.
+  - `$0` is refused; `${N}` is the unambiguous spelling for N >= 10.
+- Expansions Termcp does not own — `$$`, `$?`, `$@`, `$(…)`, `${x:-y}` — are left
+  untouched for the shell to expand.
+- A `cmd` is parsed IN FULL before any of it runs. One bad statement means nothing
+  executes:
+  `nothing was executed, including the N statement(s) before this one: a cmd is
+  parsed in full before any of it runs`. An unknown directive is a 400
+  `unknown_directive` — same rule, nothing ran.
+- Values are tokenized before parsing, so a `&&` inside `args[0]` can never be
+  mistaken for a Termcp operator.
+- Known build difference: on some builds a `$N` immediately followed by `&` or `;`
+  is substituted QUOTED (a bug, fixed on dev). If a command line seems to arrive as
+  one word — the `Path:` echo shows quotes — write the command literally in `cmd`
+  instead of through `args`.
+
+## The command surface belongs to the RUNNING instance
+
+Do not carry a spelling in from memory or from an older document. Ask the instance:
+
+- `term` with an empty `cmd` returns the guide (where am I, what can I do),
+- `help` returns the directive table,
+- `help <verb>` documents that verb.
+
+The surface has been renamed between releases, and the old names are gone
+(`unknown_directive`, nothing executed):
+
+| older | current |
+|---|---|
+| `ps` | `ls` |
+| `host list` | `ls host` |
+| `ext list` | `ls ext` |
+| `fwd --action list` | `ls <session> forward` |
+
+There is no `ext` directive and no `help ext`. The extension layer is reached
+through the shared verbs: `ls ext`, `create ext <name> --kind mcp …`,
+`edit ext <name>`, `rm ext <name>`.
+
+As of v0.2.8-rc.4 the surface is:
+
+```
+connect <host> [--argv <command>] [--on-exit keep|close] [--name …]
+open <session> [--argv <cmd> [--pty]] | open <session> forward …
+ls | ls host | ls ext | ls alias | ls <session> [forward|file]
+get <session|channel|host-name> | get <session> file <path> …
+run <session> <index> <line>      input <session> <index> <text>
+read <session> <index> …          write <session> file <path> …
+create host|ext|alias <name> [flags]      edit host|ext|alias <name> [flags]
+rm <session> | rm <session> file <path> | rm host|ext|alias <name>
+notify [--level …] [--sticky] [--on <session>] [--title T] <body>
+help [verb]
+```
+
+An address is `<session>:<index>` (`a1f3:1`). Take it from `ls` and copy it; never
+spell one from memory.
+
+## "ssh_config" is Termcp's own store
+
+It is NOT OpenSSH's `~/.ssh/config`, and it is not read from there. It is Termcp's
+own connection profile store (`ssh_configs/`, TOML records) holding `host`, `user`,
+`password`, `private_key`, `key_passphrase`, `port`, `proxy`/jump, `known_hosts`,
+`default_shell`, `default_mode` and `default_approval`. `internal` is a built-in
+loopback profile. The name is borrowed; the content is not OpenSSH's.
+
+Writing host profiles requires the instance to be started with
+`--mcp-manage-ssh-configs`. Without it the call is refused with 403, and no call can
+turn the switch on.
+
+## Where a remote MCP actually runs
+
+- `command` + `args`: the program runs ON the target, over SSH. It has to exist
+  there (e.g. `npx -y …`). Termcp itself is not installed on the target.
+- `url` (HTTP/SSE endpoint): the relay runs INSIDE termcp, so reaching a remote MCP
+  server needs no second binary and no PATH lookup on the target.
 
 ## Boundaries — read before driving Termcp
 
 - A call outside an extension's whitelist (`allow` / `paths`) is refused with a
-  `forbidden` error. It is not transient: do not retry it and do not look for a
-  way around it. If you need the capability, say so to the user.
-- Creating or updating an extension changes what the agent can reach, so those
-  actions pass through review mode: expect an HTTP 202 and wait for the human
+  `forbidden` error. It is not transient: do not retry it and do not look for a way
+  around it. If you need the capability, say so to the user.
+- Review mode is per session and is configured by the user (a profile's
+  `default_approval`, or the console's review switch). When it is on, creating or
+  updating an extension — and writes it gates — returns HTTP 202: wait for the human
   rather than retrying.
-- Host writes (SSH profiles) are refused with 403 when the instance was started
-  without `--mcp-manage-ssh-configs`. The switch cannot be turned on by a call.
-- Never close, terminate or delete an extension's session: it is shared, and
-  killing it takes down every extension served by that connection. Termcp
-  restarts a dead extension on its own — take the fresh handle from a listing.
+- Extension sessions are kept OUT of the session list: `ls` does not show them,
+  `ls ext` does. The reconciler keeps them warm and reports their state, so read the
+  handle from `ls ext` when you need one instead of holding an old one.
+- Extensions on the same host with the same whitelist share one connection (see
+  Facts), so closing or deleting a session by hand can take down more than the thing
+  you meant to close. Leave the sessions that `ls ext` names alone.
 - Secrets (sudo passwords, MFA prompts, `[Y/n]` questions) are handed back to the
   human and stay inside the shell; they do not enter the model context.
 
-## Command spelling varies by version
+## About termcp.org (the human-facing page)
 
-The extension surface was renamed between releases. On older builds it is reached
-through the shared directives — `ls ext`, `create ext <name> --kind mcp ...`,
-`edit ext <name>`. On current builds it is a directive of its own — `ext list`,
-`ext create <name> --kind mcp ...`, `ext get <name>`, `ext delete <name>`. The
-running instance is self-describing: an empty command returns the guide, `help`
-returns the directive table, and `help ext` documents the extension layer. Read
-that before composing commands; do not assume either spelling.
+- The terminal on that page is a SCRIPTED REPLAY. It calls no model and no server;
+  typing into it does not reach a real shell. Do not treat it as an endpoint.
+- Its examples use the current spelling (`ls host`, `connect node-1`,
+  `run a1f3:1 $1`, `open a1f3 forward …`), matching the table above.
+- Its size claims map to the figures in Facts: "single file 10+MB" is the ~12MB
+  binary, "UPX 5MB 以内" is the compressed build.
+- The Docker command shown there uses `--disable-auth` AND binds the port to
+  `127.0.0.1`. That pairing is the only reason it is safe; it is not a general
+  posture to copy onto a reachable interface.
+- The credits list humans and one AI maintainer (the agent that wrote the site). An
+  AI can be a maintainer or a contributor; it cannot donate.
 
 ## Docs
 

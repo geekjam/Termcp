@@ -935,7 +935,14 @@
       font-family: var(--mono);
       font-size: 12.5px;
       line-height: 1.9;
-      padding: 16px 18px;
+      /* THE FIRST LINE IS THE ALIGNMENT, not the border. The left column's step
+         text starts flush at the grid row, while a padded plate would put its
+         first line 18px lower and read as a block that sank. So the top padding
+         is thin and a 2px negative margin lifts the plate itself: the first line
+         of code now sits on the same line as step 1, and the border rides 2px
+         above it. */
+      padding: 0 18px 16px;
+      margin-top: -2px;
       overflow-x: auto;
       white-space: pre;
       color: var(--text-muted);

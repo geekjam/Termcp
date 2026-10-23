@@ -409,9 +409,18 @@
          sideways scrollbar in the install box reads as a broken layout. */
       overflow-wrap: anywhere;
       word-break: break-all;
-      user-select: all;
+      /* NOT `user-select: all`: that snaps any selection inside the box to the
+         whole element, so dragging across half the command selected everything
+         and the caret would not stay put. Point selection at the copy button
+         instead — it copies the same text without fighting the pointer. */
+      user-select: text;
     }
     .cmd-text span.prompt { color: var(--accent); margin-right: 8px; }
+    /* The AI tab shows a SENTENCE, so it is quoted like one. Generated content
+       rather than text nodes: pseudo-elements are not part of textContent, so
+       the copy button hands over the sentence with no quotes around it. */
+    #cmd-display.quoted::before { content: '\201C'; color: var(--text-faint); }
+    #cmd-display.quoted::after  { content: '\201D'; color: var(--text-faint); }
     .copy-btn {
       background: var(--accent-dim);
       border: 1px solid rgba(var(--accent-rgb), 0.3);
@@ -1193,7 +1202,8 @@
 
       <div class="command-box">
         <div class="cmd-tabs" id="cmd-tabs">
-          <button class="cmd-tab active" data-cmd="claude">Claude Code</button>
+          <button class="cmd-tab active" data-cmd="ai" data-i18n="cmd_tab_ai">AI 安装方式</button>
+          <button class="cmd-tab" data-cmd="claude">Claude Code</button>
           <button class="cmd-tab" data-cmd="codex">Codex</button>
           <button class="cmd-tab" data-cmd="gemini">Gemini CLI</button>
           <button class="cmd-tab" data-cmd="docker">Docker</button>
@@ -1201,7 +1211,7 @@
           <button class="cmd-tab" data-cmd="go">Go Install</button>
         </div>
         <div class="cmd-body">
-          <div class="cmd-text"><span class="prompt">$</span><span id="cmd-display">claude mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio</span></div>
+          <div class="cmd-text"><span class="prompt" hidden>$</span><span id="cmd-display" class="quoted">把 'npx -y @open-mcp-ai/termcp daemon stdio' 装成名为 termcp 的 MCP</span></div>
           <button class="copy-btn" id="copy-btn" data-i18n="copy_btn">复制命令</button>
         </div>
       </div>
@@ -1557,6 +1567,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
   <script>
     // Commands Dictionary
     const commands = {
+      // A sentence for the agent to read, not a shell line: its wording lives in
+      // the catalog, so a language change renders it again.
+      ai: null,
       claude: "claude mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio",
       codex: "codex mcp add termcp -- npx -y @open-mcp-ai/termcp daemon stdio",
       gemini: "gemini mcp add termcp npx -- -y @open-mcp-ai/termcp daemon stdio",
@@ -1568,18 +1581,35 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
     // Tab switcher
     const tabs = document.querySelectorAll('.cmd-tab');
     const display = document.getElementById('cmd-display');
+    const cmdPrompt = document.querySelector('.cmd-text .prompt');
+    let activeCmd = 'ai';
+    /* The exact bytes the copy button hands over. Kept apart from the rendered
+       text so the quotes the AI tab draws can never travel with it. */
+    let currentCmdText = '';
+
+    /* One renderer for both kinds of tab: a shell line from `commands`, or the
+       sentence the AI tab shows from the catalog. The AI tab hides the `$`,
+       because nothing there is a shell command. */
+    function renderCmd(key) {
+      activeCmd = key;
+      const isAI = key === 'ai';
+      cmdPrompt.hidden = isAI;
+      currentCmdText = isAI ? t('cmd_ai') : (commands[key] || '');
+      display.textContent = currentCmdText;
+      display.classList.toggle('quoted', isAI);
+    }
     tabs.forEach(tab => {
       tab.addEventListener('click', () => {
         tabs.forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        display.textContent = commands[tab.getAttribute('data-cmd')] || '';
+        renderCmd(tab.getAttribute('data-cmd'));
       });
     });
 
     // Copy Button
     const copyBtn = document.getElementById('copy-btn');
     copyBtn.addEventListener('click', () => {
-      const text = display.textContent;
+      const text = currentCmdText;
       navigator.clipboard.writeText(text).then(() => {
         copyBtn.textContent = '✓ ' + t('copied');
         setTimeout(() => { copyBtn.textContent = t('copy_btn'); }, 1800);
@@ -1879,6 +1909,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         target_ssh_tag: 'SSH',
         target_ssh_desc: '远程主机 · 内建 SSH 会话，密码不进模型上下文。',
         chip_ctx_desc: 'AI 可自行安装/编写 不限个数MCP，即刻生效。',
+        cmd_tab_ai: 'AI 安装方式',
+        cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 装成名为 termcp 的 MCP',
         chip_hosts_desc: '跨主机安装使用 MCP，和自己机器一样',
         copy_btn: '复制命令',
         copied: '已复制',
@@ -2013,6 +2045,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         target_ssh_tag: 'SSH',
         target_ssh_desc: '遠端主機 · 內建 SSH 工作階段，密碼不進模型上下文。',
         chip_ctx_desc: 'AI 可自行安裝／編寫 不限個數 MCP，即刻生效。',
+        cmd_tab_ai: 'AI 安裝方式',
+        cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 裝成名為 termcp 的 MCP',
         chip_hosts_desc: '跨主機安裝使用 MCP，和自己機器一樣',
         copy_btn: '複製指令',
         copied: '已複製',
@@ -2147,6 +2181,8 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         target_ssh_tag: 'SSH',
         target_ssh_desc: 'remote hosts · built-in SSH sessions, secrets stay out of the model context',
         chip_ctx_desc: 'the agent installs or writes any number of MCPs, live',
+        cmd_tab_ai: 'AI Install',
+        cmd_ai: 'Install \'npx -y @open-mcp-ai/termcp daemon stdio\' as an MCP named termcp',
         chip_hosts_desc: 'install and use MCP across hosts, just like your own machine',
         copy_btn: 'Copy Command',
         copied: 'Copied',
@@ -2334,6 +2370,9 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
       });
 
       copyBtn.textContent = dict.copy_btn;
+      /* The AI tab's text IS copy, so it follows the language; the shell tabs are
+         code and survive verbatim. */
+      renderCmd(activeCmd);
 
       // The transcript's own wording lives in the catalog, so a language change
       // re-renders it; the MCP call lines are code and survive verbatim.

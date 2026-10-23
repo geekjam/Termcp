@@ -411,7 +411,19 @@
       line-height: 1.7;
       color: var(--text-faint);
     }
-    .cmd-note b { color: var(--text-muted); font-weight: 600; }
+    .cmd-note .dim { color: var(--text-faint); }
+    /* The next step, on its own line and in the accent: it is the one thing in
+       this box a reader has to act on after the download. */
+    .cmd-note b {
+      display: block;
+      margin-top: 5px;
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.01em;
+    }
+    /* The note carries a config snippet, so it has to wrap like the command does. */
+    .cmd-note { overflow-wrap: anywhere; word-break: break-word; }
     .cmd-text {
       min-width: 0;
       /* Wrap on every width: the docker command is ~1460px of text, and a
@@ -424,6 +436,8 @@
          instead — it copies the same text without fighting the pointer. */
       user-select: text;
     }
+    /* The Bin tab shows a two-line snippet, so the box has to keep the newlines. */
+    #cmd-display { white-space: pre-wrap; }
     .cmd-text span.prompt { color: var(--accent); margin-right: 8px; }
     /* The AI tab shows a SENTENCE, so it is quoted like one. Generated content
        rather than text nodes: pseudo-elements are not part of textContent, so
@@ -1280,6 +1294,7 @@
           <button class="cmd-tab" data-cmd="docker">Docker</button>
           <button class="cmd-tab" data-cmd="npm">NPM</button>
           <button class="cmd-tab" data-cmd="go">Go Install</button>
+          <button class="cmd-tab" data-cmd="binary" data-i18n="cmd_tab_binary">Bin</button>
         </div>
         <div class="cmd-body">
           <div class="cmd-text"><span class="prompt" hidden>$</span><span id="cmd-display" class="quoted">把 'npx -y @open-mcp-ai/termcp daemon stdio' 装成名为 termcp 的 MCP</span></div>
@@ -1654,6 +1669,10 @@
       gemini: "gemini mcp add termcp npx -- -y @open-mcp-ai/termcp daemon stdio",
       docker: "docker run -d --name termcp -p 127.0.0.1:18765:18765 -v termcp-data:/home/termcp ghcr.io/open-mcp-ai/termcp:latest termcp --no-internal --host 0.0.0.0 --port 18765 --disable-auth",
       npm: "npx -y @open-mcp-ai/termcp daemon stdio",
+      /* One static file per platform; the release assets are named exactly
+         termcp-<os>-<arch> (plus .exe on Windows). {{target}} is filled from what
+         the browser will tell us about this machine — see detectHost. */
+      binary: "curl -fL -o termcp https://github.com/open-mcp-ai/termcp/releases/latest/download/termcp-{{target}}\nchmod +x ./termcp",
       go: "go install github.com/open-mcp-ai/termcp@latest"
     };
 
@@ -1662,6 +1681,38 @@
     const display = document.getElementById('cmd-display');
     const cmdPrompt = document.querySelector('.cmd-text .prompt');
     const cmdNote = document.getElementById('cmd-note');
+
+    /* WHICH BINARY IS THIS MACHINE? Six files are published and the command names
+       one of them. Chromium answers `getHighEntropyValues` with a real
+       architecture; Safari and Firefox freeze the platform string, so they get the
+       OS and keep `<arch>` as a placeholder — a wrong guess here is a 404 the reader
+       has to debug, which is worse than a hole they can see. */
+    let hostTarget = '<os>-<arch>';
+    let hostFilled = false;
+    const osFromUA = () => {
+      const ua = navigator.userAgent;
+      if (/Windows/i.test(ua)) return 'windows';
+      if (/Mac OS X|Macintosh/i.test(ua)) return 'darwin';
+      if (/Linux|X11|CrOS/i.test(ua)) return 'linux';
+      return '';
+    };
+    async function detectHost() {
+      let os = '', arch = '';
+      const d = navigator.userAgentData;
+      if (d && d.getHighEntropyValues) {
+        try {
+          const v = await d.getHighEntropyValues(['architecture', 'bitness', 'platform']);
+          os = { macOS: 'darwin', Windows: 'windows', Linux: 'linux', 'Chrome OS': 'linux' }[v.platform] || '';
+          arch = v.architecture === 'arm' ? 'arm64'
+               : (v.architecture === 'x86' && v.bitness === '64') ? 'amd64' : '';
+        } catch (err) { /* optional API; a refusal just leaves the placeholder */ }
+      }
+      if (!os) os = osFromUA();
+      if (!os) return;
+      hostFilled = !!arch;
+      hostTarget = os + '-' + (arch || '<arch>') + (os === 'windows' ? '.exe' : '');
+      renderCmd(activeCmd);
+    }
     let activeCmd = 'ai';
     /* The exact bytes the copy button hands over. Kept apart from the rendered
        text so the quotes the AI tab draws can never travel with it. */
@@ -1674,12 +1725,24 @@
       activeCmd = key;
       const isAI = key === 'ai';
       cmdPrompt.hidden = isAI;
-      currentCmdText = isAI ? t('cmd_ai') : (commands[key] || '');
+      if (isAI) {
+        currentCmdText = t('cmd_ai');
+      } else {
+        currentCmdText = (commands[key] || '').replace('{{target}}', hostTarget);
+        /* chmod is not a thing on Windows; the rest of the block is one file
+           either way, so dropping the line is the whole difference. */
+        if (key === 'binary' && hostTarget.indexOf('windows') === 0) {
+          currentCmdText = currentCmdText.split('\n').filter(l => l.indexOf('chmod') !== 0).join('\n');
+        }
+      }
       display.textContent = currentCmdText;
       display.classList.toggle('quoted', isAI);
       /* A tab may carry a caveat that belongs with its own command. */
-      const note = key === 'docker' ? t('cmd_note_docker') : '';
-      cmdNote.textContent = note;
+      const noteKey = { docker: 'cmd_note_docker', binary: hostFilled ? 'cmd_note_binary_ok' : 'cmd_note_binary' }[key];
+      /* innerHTML, not textContent: the followup line is marked up so it reads as
+         the next step rather than as a footnote. */
+      const note = noteKey ? t(noteKey).replace('{{target}}', hostTarget) : '';
+      cmdNote.innerHTML = note;
       cmdNote.hidden = !note;
     }
     tabs.forEach(tab => {
@@ -1995,6 +2058,9 @@
         chip_ctx_desc: 'AI 可自行安装/开发 不限个数MCP，即刻生效。',
         cmd_tab_ai: 'AI Install',
         cmd_note_docker: '端口只绑在 127.0.0.1，所以这条命令关掉了鉴权。换成对外可达的地址，就把鉴权打开。',
+        cmd_tab_binary: 'Bin',
+        cmd_note_binary: '<span class="dim">平台名是 darwin / linux / windows 配 amd64 / arm64（Windows 带 .exe）。</span><b>配置 MCP：\'termcp daemon stdio\'，或者交给 Agent。</b>',
+        cmd_note_binary_ok: '<b>配置 MCP：\'termcp daemon stdio\'，或者交给 Agent。</b>',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 装成名为 termcp 的 MCP',
         chip_hosts_desc: '跨主机安装使用 MCP，和自己机器一样',
         copy_btn: '复制命令',
@@ -2133,6 +2199,9 @@
         chip_ctx_desc: 'AI 可自行安裝／開發 不限個數 MCP，即刻生效。',
         cmd_tab_ai: 'AI Install',
         cmd_note_docker: '連接埠只綁在 127.0.0.1，所以這條指令關掉了鑑權。換成對外可達的位址，就把鑑權打開。',
+        cmd_tab_binary: 'Bin',
+        cmd_note_binary: '<span class="dim">平台名是 darwin / linux / windows 配 amd64 / arm64（Windows 帶 .exe）。</span><b>設定 MCP：\'termcp daemon stdio\'，或者交給 Agent。</b>',
+        cmd_note_binary_ok: '<b>設定 MCP：\'termcp daemon stdio\'，或者交給 Agent。</b>',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 裝成名為 termcp 的 MCP',
         chip_hosts_desc: '跨主機安裝使用 MCP，和自己機器一樣',
         copy_btn: '複製指令',
@@ -2271,6 +2340,9 @@
         chip_ctx_desc: 'the agent installs or builds any number of MCPs, live',
         cmd_tab_ai: 'AI Install',
         cmd_note_docker: 'The port is bound to 127.0.0.1 only, which is why this command turns auth off. Bind it anywhere reachable and turn auth back on.',
+        cmd_tab_binary: 'Bin',
+        cmd_note_binary: '<span class="dim">The platform name is darwin, linux or windows with amd64 or arm64 (.exe on Windows).</span><b>Set the MCP to \'termcp daemon stdio\' — or hand it to the agent.</b>',
+        cmd_note_binary_ok: '<b>Set the MCP to \'termcp daemon stdio\' — or hand it to the agent.</b>',
         cmd_ai: 'Install \'npx -y @open-mcp-ai/termcp daemon stdio\' as an MCP named termcp',
         chip_hosts_desc: 'install and use MCP across hosts, just like your own machine',
         copy_btn: 'Copy Command',
@@ -2640,6 +2712,7 @@
     detectLang();
     fetchGitHubMeta();
     fetchDonors();
+    detectHost();
   </script>
 </body>
 </html>

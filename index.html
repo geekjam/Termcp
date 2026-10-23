@@ -904,9 +904,27 @@
     .fleet {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 26px;
+      /* No row gap: the heading's own margin is the only space between the two
+         rows of column one, so the left column reads as one block. */
+      column-gap: 26px;
       align-items: start;
     }
+    .fleet > .sec-head { grid-column: 1; grid-row: 1; margin-bottom: 26px; }
+    .fleet-steps { grid-column: 1; grid-row: 2; }
+    /* The plate spans both rows, so its top edge meets the heading and its bottom
+       meets the end of the recipe — the two columns start and finish together. */
+    .fleet-plate {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      /* `align-items: start` on the grid would shrink the plate back to its
+         content, so the span has to be claimed explicitly: the plate fills both
+         rows and the code box flexes, which is what puts its bottom edge on the
+         recipe's last line. */
+      align-self: stretch;
+      display: flex;
+      flex-direction: column;
+    }
+    .fleet-plate .fleet-code { flex: 1; }
     .fleet-steps { display: flex; flex-direction: column; gap: 14px; }
     .fleet-step { display: flex; gap: 12px; align-items: flex-start; }
     .fleet-step .n {
@@ -1110,6 +1128,13 @@
        fold into one well before the general mobile breakpoint. */
     @media (max-width: 980px) {
       .fleet { grid-template-columns: minmax(0, 1fr); }
+      /* One column: the explicit placement has to go, or the plate stays in
+         column two and overflows the page. */
+      .fleet > .sec-head, .fleet-steps, .fleet-plate {
+        grid-column: 1;
+        grid-row: auto;
+      }
+      .fleet > .sec-head { margin-bottom: 22px; }
     }
     @media (max-width: 640px) {
       .hero h1 { font-size: 30px; }
@@ -1209,7 +1234,7 @@
 
       <div class="command-box">
         <div class="cmd-tabs" id="cmd-tabs">
-          <button class="cmd-tab active" data-cmd="ai" data-i18n="cmd_tab_ai">AI 安装方式</button>
+          <button class="cmd-tab active" data-cmd="ai" data-i18n="cmd_tab_ai">AI Install</button>
           <button class="cmd-tab" data-cmd="claude">Claude Code</button>
           <button class="cmd-tab" data-cmd="codex">Codex</button>
           <button class="cmd-tab" data-cmd="gemini">Gemini CLI</button>
@@ -1367,13 +1392,17 @@
          capabilities grid, where "any remote SSH host" just raised the question
          of how many and at what cost. -->
     <section class="section" id="fleet">
-      <div class="sec-head">
-        <div class="sec-kicker" data-i18n="fleet_kicker">MULTI-HOST</div>
-        <h2 class="sec-title" data-i18n="fleet_title">多机编组：一个 Termcp，管住所有机器</h2>
-        <p class="sec-sub" data-i18n="fleet_sub">横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。</p>
-      </div>
-
       <div class="fleet">
+        <!-- THE HEADING IS THE FIRST ROW OF THE LEFT COLUMN, not a band above
+             both: title, the sentence under it and the recipe are one block, and
+             the plate beside them is the other. A heading that floats above the
+             two columns reads as a third block that belongs to neither. -->
+        <div class="sec-head">
+          <div class="sec-kicker" data-i18n="fleet_kicker">MULTI-HOST</div>
+          <h2 class="sec-title" data-i18n="fleet_title">多机编组：一个 Termcp，管住所有机器</h2>
+          <p class="sec-sub" data-i18n="fleet_sub">横向扩展不需要部署：多开一个终端窗口，就多一台机器进控制面。</p>
+        </div>
+
         <div class="fleet-steps">
           <div class="fleet-step">
             <span class="n">1</span>
@@ -1394,7 +1423,7 @@
           <p class="fleet-note" data-i18n-html="fleet_note"><b>远程机器什么都不用装</b> —— 只要开了 SSH。密钥、跳板与密码都留在你本地那个 Termcp 里，目标主机上没有任何 Termcp 组件、也不会有它的进程。</p>
         </div>
 
-        <div>
+        <div class="fleet-plate">
           <div class="fleet-code"><span class="c" data-i18n="fleet_c1"># 你本地，一次就好</span>
 $ <span class="k">npx -y @open-mcp-ai/termcp</span>
   <span class="h">→ http://127.0.0.1:18765</span>
@@ -1916,7 +1945,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         target_ssh_tag: 'SSH',
         target_ssh_desc: '远程主机 · 内建 SSH 会话，密码不进模型上下文。',
         chip_ctx_desc: 'AI 可自行安装/编写 不限个数MCP，即刻生效。',
-        cmd_tab_ai: 'AI 安装方式',
+        cmd_tab_ai: 'AI Install',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 装成名为 termcp 的 MCP',
         chip_hosts_desc: '跨主机安装使用 MCP，和自己机器一样',
         copy_btn: '复制命令',
@@ -2052,7 +2081,7 @@ $ <span class="k">npx -y @open-mcp-ai/termcp</span>
         target_ssh_tag: 'SSH',
         target_ssh_desc: '遠端主機 · 內建 SSH 工作階段，密碼不進模型上下文。',
         chip_ctx_desc: 'AI 可自行安裝／編寫 不限個數 MCP，即刻生效。',
-        cmd_tab_ai: 'AI 安裝方式',
+        cmd_tab_ai: 'AI Install',
         cmd_ai: '把 \'npx -y @open-mcp-ai/termcp daemon stdio\' 裝成名為 termcp 的 MCP',
         chip_hosts_desc: '跨主機安裝使用 MCP，和自己機器一樣',
         copy_btn: '複製指令',

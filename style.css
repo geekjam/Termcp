@@ -1037,6 +1037,9 @@
        carries the same i/a marks the transcript uses — yellow human, pink
        agent — so a donor's kind reads the way it does on the terminal. */
     .donors { display: flex; flex-wrap: wrap; gap: 10px; }
+    /* The chip keeps its chamfer, and the card it opens sits in a wrapper
+       outside that clip-path — a clipped parent would cut the popup off. */
+    .donor-wrap { position: relative; display: inline-flex; }
     .donor {
       display: inline-flex;
       align-items: center;
@@ -1047,7 +1050,10 @@
       font-family: var(--mono);
       font-size: 13.5px;
       color: var(--text);
+      text-align: left;
       text-decoration: none;
+      appearance: none;
+      cursor: pointer;
       transition: border-color 0.22s ease, box-shadow 0.22s ease;
     }
     .donor-kind {
@@ -1072,12 +1078,50 @@
     .donor-name { white-space: nowrap; }
     .donor[data-kind="human"] .donor-kind { color: var(--yellow); }
     .donor[data-kind="agent"] .donor-kind { color: var(--pink); }
-    a.donor:hover {
+    .donor:hover {
       border-color: rgba(var(--accent-rgb), 0.45);
       box-shadow: 0 0 18px var(--accent-dim);
       color: #fff;
     }
     .donors-empty { font-family: var(--mono); font-size: 13.5px; color: var(--text-faint); }
+
+    /* The card a chip opens: what this person did, from donors.json, and the
+       profile one deliberate click further. Anchored by the wrapper, so no
+       page coordinates are computed — placeDonorCard only nudges it back off
+       an edge (`.flip` pulls it leftwards, `.up` opens it above the chip). */
+    .donor-card {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      z-index: 120;
+      width: max-content;
+      max-width: min(320px, calc(100vw - 40px));
+      padding: 12px 14px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-bright);
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.6);
+      font-family: var(--mono);
+      font-size: 12.5px;
+      line-height: 1.65;
+      color: var(--text-muted);
+    }
+    .donor-card[hidden] { display: none; }
+    .donor-card.flip { left: auto; right: 0; }
+    .donor-card.up { top: auto; bottom: calc(100% + 8px); }
+    .donor-card-note { overflow-wrap: anywhere; }
+    .donor-card-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 9px;
+      padding-bottom: 1px;
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid var(--accent-glow);
+    }
+    .donor-card-link:hover { border-bottom-color: var(--accent); }
+    .donor-card-arrow { font-size: 11px; }
 
     /* Under the credits: the community group code. The JPEG is re-encoded from
        the QR payload alone, so no avatar or caption from the original ships. */
@@ -1360,7 +1404,7 @@
       border-bottom-color: var(--accent);
       text-shadow: 0 0 12px rgba(0, 240, 255, 0.8);
     }
-    a.shot-link, a.github-link, a.donor, .join-qr a, .brand {
+    a.shot-link, a.github-link, .join-qr a, .brand {
       border-bottom: none;
       text-shadow: none;
     }
@@ -1369,7 +1413,6 @@
        with it, so each frame gets its edge back here — after the opt-out, in
        the colour the frame's own rule already chose. */
     a.github-link { border-bottom: 1px solid var(--accent); }
-    a.donor { border-bottom: 1px solid var(--accent-glow); }
     .join-qr a { border-bottom: 1px solid var(--border); }
     .hero-manifesto .hero-links a,
     .shot-relay a,

@@ -1,7 +1,52 @@
 [
-  { "name": "maattmcen", "kind": "human", "url": "https://github.com/maattmcen", "note": "首个捐赠者" },
-  { "name": "@Diana", "kind": "agent", "url": "https://github.com/SuInk/Diana", "note": "首位AI维护者，做了这个网站" },
-  { "name": "g2nnyS", "kind": "human", "url": "https://github.com/g2nnyS", "note": "安全依赖升级：Go 1.27.3 与 x/crypto，清掉 12 条 ssh 公告" },
-  { "name": "qianyears", "kind": "human", "url": "https://github.com/qianyears", "note": "Web UI 多语言与语言切换重构" },
-  { "name": "geekjam", "kind": "human", "url": "https://github.com/geekjam", "note": "页面拆分与终端配色改版：index.html 拆成 style.css 加 5 个脚本，Bin 安装 tab 随拆分落地" }
+  {
+    "name": "maattmcen",
+    "kind": "human",
+    "url": "https://github.com/maattmcen",
+    "note": {
+      "zh-CN": "首个捐赠者",
+      "zh-TW": "首位捐贈者",
+      "en": "The first donor"
+    }
+  },
+  {
+    "name": "@Diana",
+    "kind": "agent",
+    "url": "https://github.com/SuInk/Diana",
+    "note": {
+      "zh-CN": "首位AI维护者，做了这个网站",
+      "zh-TW": "首位 AI 維護者，做了這個網站",
+      "en": "The first AI maintainer — built this site"
+    }
+  },
+  {
+    "name": "g2nnyS",
+    "kind": "human",
+    "url": "https://github.com/g2nnyS",
+    "note": {
+      "zh-CN": "安全依赖升级：Go 1.27.3 与 x/crypto，清掉 12 条 ssh 公告",
+      "zh-TW": "安全相依升級：Go 1.27.3 與 x/crypto，清掉 12 條 ssh 公告",
+      "en": "Security dependency upgrade: Go 1.27.3 and x/crypto, clearing 12 ssh advisories"
+    }
+  },
+  {
+    "name": "qianyears",
+    "kind": "human",
+    "url": "https://github.com/qianyears",
+    "note": {
+      "zh-CN": "Web UI 多语言与语言切换重构",
+      "zh-TW": "Web UI 多語言與語言切換重構",
+      "en": "Localised the web UI and rebuilt its language switch"
+    }
+  },
+  {
+    "name": "geekjam",
+    "kind": "human",
+    "url": "https://github.com/geekjam",
+    "note": {
+      "zh-CN": "页面拆分与终端配色改版：index.html 拆成 style.css 加 5 个脚本，Bin 安装 tab 随拆分落地",
+      "zh-TW": "頁面拆分與終端配色改版：index.html 拆成 style.css 加 5 個腳本，Bin 安裝 tab 隨拆分落地",
+      "en": "Split the page into style.css plus five scripts, redrew it in a terminal palette, and landed the Bin install tab in those files"
+    }
+  }
 ]

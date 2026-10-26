@@ -7,7 +7,7 @@ const i18nData = {
   'zh-CN': {
     auto_label: '🌐 自动',
     hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
-    hero_title: '你的最后一个 MCP',
+    hero_title: '最终的 MCP',
     hero_desc: '一个 MCP <strong>统御</strong> 所有机器和所有 MCP。',
     hero_manifesto: '无视上下文和机器限制，MCP 自由扩展。让你的 AI 自己开发 MCP，装上自己用。<span class="hero-links">AI 用户请移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
     hero_claim: '装一次。以后每一台机器、每一个 MCP，都归它管。',
@@ -149,7 +149,7 @@ const i18nData = {
   'zh-TW': {
     auto_label: '🌐 自動',
     hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
-    hero_title: '你的最後一個 MCP',
+    hero_title: '最終的 MCP',
     hero_desc: '一個 MCP <strong>統御</strong> 所有機器和所有 MCP。',
     hero_manifesto: '無視上下文和機器限制，MCP 自由擴充。讓你的 AI 自己開發 MCP，裝上自己用。<span class="hero-links">AI 使用者請移步 <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
     hero_claim: '裝一次。以後每一台機器、每一個 MCP，都歸它管。',
@@ -291,7 +291,7 @@ const i18nData = {
   'en': {
     auto_label: '🌐 Auto',
     hero_pill: 'AI NATIVE CONTROL PLANE · MCP',
-    hero_title: 'The last MCP you\u2019ll install',
+    hero_title: 'The Terminus MCP',
     hero_desc: 'One MCP <strong>DOMINATES</strong> every machine and every MCP you own.',
     hero_manifesto: 'Ignore the context limit and the machine limit — MCPs expand freely. Let your agent build an MCP of its own and install it.<span class="hero-links">AI users: head to <a href="https://ai.termcp.org" target="_blank" rel="noopener">ai.termcp.org</a><span class="sep">/</span><a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a></span>',
     hero_claim: 'Install once. After that, every machine and every MCP answers to it.',

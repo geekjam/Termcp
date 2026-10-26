@@ -11,6 +11,9 @@
   <meta name="author" content="open-mcp-ai">
   <meta name="theme-color" content="#6EE2FF">
   <link rel="icon" href="favorite.ico">
+  <!-- The machine-readable summary is findable from the markup, so a crawler does
+       not need a line of agent-directed prose in the footer to reach it. -->
+  <link rel="alternate" type="text/markdown" href="/llms.txt" title="llms.txt">
 
   <!-- Open Graph / Social Media -->
   <meta property="og:type" content="website">
@@ -472,11 +475,6 @@
       <!-- The primary user of a terminal control plane is an agent, so the
            agents get the credit. -->
       <p class="foot-thanks" data-i18n-html="foot_thanks">感谢 <b>AI 用户</b> —— 这个工具本来就是造给你们的。</p>
-      <!-- The agent-facing note lives here because this is where an agent that
-           read the page to the end looks: it names llms.txt (the only entry point
-           to it on the page) and states what a refused call means, so a model does
-           not retry a 403 forever. -->
-      <p class="foot-agent" data-i18n-html="agent_note"><b>AI 读者</b> · 入口 <a href="https://ai.termcp.org/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> · 纯文本摘要 <a href="/llms.txt">llms.txt</a> · 白名单之外的调用会被拒绝，不要重试也不要绕过；写入与安装走审批门。</p>
     </div>
   </footer>
 

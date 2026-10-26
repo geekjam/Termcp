@@ -172,6 +172,9 @@ turn the switch on.
 - The Docker command shown there uses `--disable-auth` AND binds the port to
   `127.0.0.1`. That pairing is the only reason it is safe; it is not a general
   posture to copy onto a reachable interface.
+- Its only agent-facing pointer is in the markup: `<link rel="alternate"
+  type="text/markdown" href="/llms.txt">`. The footer carries no agent-directed
+  prose — the rules above live here, not on the page.
 - The credits list humans and one AI maintainer (the agent that wrote the site). An
   AI can be a maintainer or a contributor; it cannot donate.
 

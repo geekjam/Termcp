@@ -1178,17 +1178,6 @@
       font-size: 12px;
       color: var(--text-faint);
     }
-    /* Same quiet line as the thanks above it, but the links have to be findable:
-       this is the page's only pointer to llms.txt. */
-    .foot-agent {
-      margin-top: 8px;
-      font-size: 12px;
-      line-height: 1.7;
-      color: var(--text-faint);
-    }
-    .foot-agent b { color: var(--text-muted); font-weight: 600; }
-    .foot-agent a { color: var(--text-muted); border-bottom: 1px solid var(--border-bright); text-decoration: none; }
-    .foot-agent a:hover { color: var(--accent); border-bottom-color: var(--accent); }
     .foot-thanks b { color: var(--text-muted); font-weight: 600; }
 
     /* The plate is 511px wide before anything scrolls (its longest line is the
@@ -1416,14 +1405,12 @@
     .join-qr a { border-bottom: 1px solid var(--border); }
     .hero-manifesto .hero-links a,
     .shot-relay a,
-    .foot-agent a,
     footer a {
       color: var(--pink);
       border-bottom: 1px dashed rgba(255, 43, 214, 0.5);
     }
     .hero-manifesto .hero-links a:hover,
     .shot-relay a:hover,
-    .foot-agent a:hover,
     footer a:hover {
       color: var(--accent);
       border-bottom-color: var(--accent);
